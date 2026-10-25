@@ -42,6 +42,7 @@
       "output": "release",
       "buildResources": "resources"
     },
+    "npmRebuild": false,
     "files": [
       "out/**/*",
       "package.json"
