@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { DriverReport, LightingState, Settings } from '@shared/types'
+import type { DriverReport, FanChannelConfig, LightingState, Settings } from '@shared/types'
+import type { ChipPoint } from './services/fanCurves'
 import type { Paths } from './services/paths'
 
 export interface Database {
@@ -9,6 +10,12 @@ export interface Database {
   /** The lighting last applied, re-applied on start-up. */
   lighting: LightingState | null
   lastDriverReport: DriverReport | null
+  /** Turned on from the Overview page; starts the sensor helper at launch. */
+  monitoringEnabled: boolean
+  /** Fan settings keyed by control sensor id. */
+  fans: Record<string, FanChannelConfig>
+  /** NCT6701D headers' own curves from before Streamline first rewrote them; BIOS mode restores these. */
+  chipOriginals: Record<string, ChipPoint[]>
 }
 
 const SCHEMA_VERSION = 1
@@ -24,7 +31,10 @@ function emptyDatabase(): Database {
     schemaVersion: SCHEMA_VERSION,
     settings: { ...DEFAULT_SETTINGS },
     lighting: null,
-    lastDriverReport: null
+    lastDriverReport: null,
+    monitoringEnabled: false,
+    fans: {},
+    chipOriginals: {}
   }
 }
 
@@ -49,7 +59,10 @@ export class Store {
         // Merge so newly added settings keys always get a default.
         settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
         lighting: parsed.lighting ?? null,
-        lastDriverReport: parsed.lastDriverReport ?? null
+        lastDriverReport: parsed.lastDriverReport ?? null,
+        monitoringEnabled: parsed.monitoringEnabled === true,
+        fans: parsed.fans ?? {},
+        chipOriginals: parsed.chipOriginals ?? {}
       }
     } catch {
       return emptyDatabase()

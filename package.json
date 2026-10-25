@@ -2,15 +2,16 @@
   "name": "streamline",
   "productName": "Streamline",
   "version": "0.1.0",
-  "description": "Streamline - one small tray app for ASUS Aura lighting and motherboard driver updates.",
+  "description": "Streamline - one small tray app for ASUS Aura lighting, fan control, sensors and motherboard driver updates.",
   "author": "JerricP",
   "license": "MIT",
   "private": true,
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "start": "electron-vite preview",
+    "fetch:lhm": "node scripts/fetch-lhm.mjs",
+    "dev": "node scripts/fetch-lhm.mjs && electron-vite dev",
+    "build": "node scripts/fetch-lhm.mjs && electron-vite build",
+    "start": "node scripts/fetch-lhm.mjs && electron-vite preview",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -41,6 +42,7 @@
       "output": "release",
       "buildResources": "resources"
     },
+    "npmRebuild": false,
     "files": [
       "out/**/*",
       "package.json"
@@ -53,6 +55,16 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "extraResources": [
+      {
+        "from": "resources/sensors",
+        "to": "sensors"
+      },
+      {
+        "from": "resources/lhm",
+        "to": "lhm"
+      }
+    ]
   }
 }

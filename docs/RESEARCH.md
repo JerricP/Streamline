@@ -62,8 +62,85 @@ WIFI** (Aura controller PID `0x19AF`).
 | Audio | MI_01, "Creative Pebble Pro" |
 | Creative App | `Creative.Platform.Devices.dll` (.NET), `HidLibrary.dll`, `AirohaHidCoreLib.dll` (Airoha chip) |
 
-## Fan control (later)
+## Fan control and sensors
 
 Armoury Crate ships `AsusFanControlService` and talks to the board's Nuvoton
-Super I/O chip (`NCTSmbus`, `Global\ASUS_SIO_MUTEX`). That needs kernel-level
-port access, unlike lighting, so it will be a separate, opt-in step.
+Super I/O chip (`NCTSmbus`, `Global\ASUS_SIO_MUTEX`). That chip sits behind
+I/O ports, so unlike lighting it needs a kernel driver.
+
+| Option | Verdict |
+| --- | --- |
+| Reuse Armoury Crate's driver (AsIO3) | No: undocumented, and its past CVEs are why people avoid it |
+| WinRing0 (old LibreHardwareMonitor, FanControl) | No: flagged as a vulnerable driver by Defender since 2025 |
+| LibreHardwareMonitorLib 0.9.6 + PawnIO | **Used.** PawnIO is a signed driver that only runs small verified modules; LHM ships the Super I/O module |
+
+LibreHardwareMonitorLib 0.9.6 lists the **ROG STRIX B850-I GAMING WIFI** and
+the **NCT6701D** chip by name, so it labels this board's fan headers and
+temperatures. It needs:
+
+- **PawnIO** installed once (`winget install namazso.PawnIO`, or pawnio.eu);
+  without it CPU/GPU/drive sensors still show, but no motherboard fans.
+- **Administrator rights**, because PawnIO only opens for admins.
+
+Streamline stays a normal user-mode app. When monitoring is turned on it
+starts `resources/sensors/StreamlineSensors.ps1` elevated (UAC prompt) under
+Windows PowerShell 5.1, which is .NET Framework and can load LHM's net472
+build directly, so no .NET SDK is needed. The helper connects back to the app
+over a random named pipe, proves itself with a per-launch token, and only
+understands `read`, `set` (duty 0-100 on a known control) and `default`.
+Closing the pipe for any reason makes it call `SetDefault()` on every fan it
+touched, so a crash leaves fans on the BIOS curve, not stuck.
+
+Fan curve safety (`src/main/services/fanCurves.ts`): a curve whose
+temperature can't be read, or reads 95 °C or more, runs at 100%; changes ramp
+(+8%/s, -3%/s) so short CPU spikes don't rev fans; anything that takes a fan
+back from Streamline (e.g. Armoury Crate) is overridden on the next tick.
+
+Only motherboard headers and coolers are offered on the Fans page. LHM can
+also drive graphics card fans through the GPU driver, but that would override
+the card's zero-RPM idle mode, and Armoury Crate never did it.
+
+Checked on the target PC (2026-10-25), helper run **without** admin or PawnIO:
+it loads cleanly under PowerShell 5.1.26100, a full read takes ~100-170 ms,
+and closing the pipe ends it. It saw the Ryzen 7 9800X3D (Tctl/Tdie reading 0
+without driver access), the RTX 5080 and the Radeon iGPU, but no Super I/O
+chip and no drives, as expected without PawnIO and admin. PawnIO was not
+installed and `AsusFanControlService` was running.
+
+With PawnIO and admin it found the **Nuvoton NCT6701D** (`/lpc/nct6701d/0`):
+CPU Fan (control/1, an AIO pump at ~2,900 RPM), Chassis Fan (control/0, the
+AIO radiator fans, ~1,130 RPM at 71% on BIOS), Extra Flow Fan (control/5) and
+AIO Pump (control/6), plus Tctl/Tdie and the NVMe drives.
+
+**Fan control does not work on this chip with LHM 0.9.6.** Setting the
+Chassis Fan to 51%, and then to a fixed 100%, dropped it to 0 RPM while the
+chip read back the duty that was written. LHM has no NCT6701D-specific code:
+it takes manual control the way it does for older Nuvoton chips (mode
+register 0x102 ← 0, duty to 0x109). 
+
+Armoury Crate's `AsusFanControlService` (native C++, port I/O through
+`AsIO3.sys`, log in `ProgramData\ASUS\ARMOURY CRATE Diagnosis\asuslog`)
+never uses manual duty on this chip. Per header bank (Chassis = 0x01,
+CPU = 0x02, Extra Flow = 0x0A, AIO Pump = 0x0B) it keeps SmartFan IV
+(0x02 = 0x40) with the dual DC/PWM curve engine on (0x1C = 0x82), and writes a
+10-point PWM curve: temperatures at 0x11-0x14, 0x80-0x85 and duties (0-255) at
+0x17-0x1A, 0x86-0x8B, pausing the engine (0x1C bit 7) while it writes. The DC
+points (0x21-0x24, 0x27-0x2A, 0x70-0x7B) are all zero. A read-only register
+dump matched Armoury Crate's saved curves exactly. LHM's manual mode
+(0x02 = 0) leaves the dual-mode engine on with those zero DC points, which
+fits the fans losing power while the duty register reads 51% or 100%.
+
+So Streamline now drives NCT6701D headers the same way ("chip curves"): the
+helper writes the 10 points through LHM's own `Nct677X.ReadByte/WriteByte`
+(reflection) under the ISA bus and `Global\ASUS_SIO_MUTEX` locks, refusing
+unless the header is in SmartFan IV with the engine on, and reads them back.
+The original curve is saved before the first write and BIOS mode writes it
+back. The chip follows its own CPU temperature input and keeps running the
+curve when Streamline is closed. A 95 °C point at 100% is always included,
+the stall guard watches RPM, and curves are re-checked every 30 s and after
+resume (Armoury Crate rewrites its curves on service start and resume).
+Only the Chassis header is enabled until this is proven on the real board.
+
+Also added after this test: a stall guard (a fan that has spun before and
+reads 0 RPM for 6 s at ≥25% goes back to the BIOS), a per-fan minimum speed,
+and fan names.
