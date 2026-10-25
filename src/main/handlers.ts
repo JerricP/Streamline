@@ -179,7 +179,7 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
 
   handle<FansStatus>(CHANNELS.fansStatus, fansStatus)
 
-  handle<FansStatus>(CHANNELS.fansSave, (controlId: string, input: Partial<FanChannelConfig>) => {
+  handle<FansStatus>(CHANNELS.fansSave, async (controlId: string, input: Partial<FanChannelConfig>) => {
     if (!fanChannels(sensors.snapshot, {}, sensors.targets).some((channel) => channel.controlId === controlId)) {
       throw new Error('That fan is not available right now.')
     }
@@ -187,6 +187,8 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
     if (config.mode !== 'bios' && !canControl(controlId)) {
       throw new Error("Streamline can't drive this fan chip safely yet, so it stays on the BIOS. You can still rename it.")
     }
+    // Chip-curve headers are written now, so a failure is reported and not saved.
+    await sensors.applyFanConfig(controlId, config)
     store.mutate((db) => {
       db.fans = { ...db.fans, [controlId]: config }
     })

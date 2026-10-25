@@ -9,8 +9,10 @@
 
     helper -> app   {"type":"hello","token":...,"elevated":...,"driverInstalled":...}
     app -> helper   {"id":1,"cmd":"read"}
-                    {"id":2,"cmd":"set","control":"/lpc/nct6701d/0/control/1","value":55}
-                    {"id":3,"cmd":"default","control":"/lpc/nct6701d/0/control/1"}
+                    {"id":2,"cmd":"set","control":"/lpc/nct6799d/0/control/1","value":55}
+                    {"id":3,"cmd":"default","control":"/lpc/nct6799d/0/control/1"}
+                    {"id":4,"cmd":"chipCurveRead","control":"/lpc/nct6701d/0/control/0"}
+                    {"id":5,"cmd":"chipCurveWrite","control":"/lpc/nct6701d/0/control/0","points":[{"temp":0,"duty":127},...]}
     helper -> app   {"id":1,"ok":true,"hardware":[...]}  or  {"id":1,"ok":false,"error":"..."}
 
   When the pipe closes for any reason (Streamline quit, crashed or was killed)
@@ -73,6 +75,67 @@ function Num($value) {
 $computer = $null
 $controls = @{}
 $touched = @{}
+
+# ---- NCT6701D chip curves ----------------------------------------------------
+# On the ROG Strix B850-I the fan chip runs its own 10-point curve per header
+# (SmartFan IV, register 0x02 = 0x40, with 0x1C bit 7 enabling the dual
+# DC/PWM curve engine). Armoury Crate sets fans by rewriting those points;
+# LibreHardwareMonitor's manual duty leaves the DC curve at zero and the fan
+# stops. So for this chip Streamline writes the curve points, as ASUS does.
+# Banks were read off this board; headers not listed here stay read-only.
+# CPU_FAN (control/1, bank 0x02) is left out for now: on this PC it drives the AIO pump.
+$chipBanks = @{
+  '/lpc/nct6701d/0/control/0' = 0x01  # Chassis Fan
+}
+$chipTempRegs = @(0x11, 0x12, 0x13, 0x14, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85)
+$chipDutyRegs = @(0x17, 0x18, 0x19, 0x1A, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B)
+$chipModeReg = 0x02
+$chipSmartFanIV = 0x40
+$chipEngineReg = 0x1C
+$chipEngineOn = 0x80
+
+function Get-Nct([string]$controlId) {
+  $bank = $chipBanks[$controlId]
+  if ($null -eq $bank) { throw "Chip curves are not supported on $controlId" }
+  $prefix = $controlId -replace '/control/\d+$', ''
+  $hardware = $null
+  foreach ($board in $computer.Hardware) {
+    foreach ($sub in $board.SubHardware) { if ($sub.Identifier.ToString() -eq $prefix) { $hardware = $sub } }
+  }
+  if (-not $hardware) { throw "Fan chip $prefix not found" }
+  $flags = [System.Reflection.BindingFlags]'NonPublic, Instance'
+  $chip = $hardware.GetType().GetField('_superIO', $flags).GetValue($hardware)
+  return @{
+    bank = $bank
+    chip = $chip
+    read = $chip.GetType().GetMethod('ReadByte', $flags)
+    write = $chip.GetType().GetMethod('WriteByte', $flags)
+  }
+}
+
+function Read-Reg($nct, [int]$reg) { return [int]$nct.read.Invoke($nct.chip, @([uint16]($nct.bank * 256 + $reg))) }
+function Write-Reg($nct, [int]$reg, [int]$value) { [void]$nct.write.Invoke($nct.chip, @([uint16]($nct.bank * 256 + $reg), [byte]$value)) }
+
+# Hold the same locks LibreHardwareMonitor and Armoury Crate use for the chip.
+function Use-ChipLock([scriptblock]$body) {
+  if (-not [LibreHardwareMonitor.Hardware.Mutexes]::WaitIsaBus(1000)) { throw 'The fan chip is busy' }
+  $asus = $null
+  try {
+    try {
+      $asus = [System.Threading.Mutex]::OpenExisting('Global\ASUS_SIO_MUTEX')
+      try { [void]$asus.WaitOne(1000) } catch [System.Threading.AbandonedMutexException] { }
+    } catch { $asus = $null }
+    return & $body
+  } finally {
+    if ($asus) { try { $asus.ReleaseMutex() } catch { }; $asus.Dispose() }
+    [LibreHardwareMonitor.Hardware.Mutexes]::ReleaseIsaBus()
+  }
+}
+
+function Read-ChipCurve($nct) {
+  $points = for ($i = 0; $i -lt 10; $i++) { @{ temp = (Read-Reg $nct $chipTempRegs[$i]); duty = (Read-Reg $nct $chipDutyRegs[$i]) } }
+  return @{ mode = (Read-Reg $nct $chipModeReg); engine = (Read-Reg $nct $chipEngineReg); points = @($points) }
+}
 
 try {
   $computer = New-Object LibreHardwareMonitor.Hardware.Computer
@@ -139,6 +202,45 @@ try {
           if ($control) { $control.SetDefault() }
           $touched.Remove([string]$request.control)
           Send @{ id = $request.id; ok = $true }
+        }
+        'chipCurveRead' {
+          $nct = Get-Nct ([string]$request.control)
+          $curve = Use-ChipLock { Read-ChipCurve $nct }
+          Send @{ id = $request.id; ok = $true; curve = $curve }
+        }
+        'chipCurveWrite' {
+          $nct = Get-Nct ([string]$request.control)
+          $points = @($request.points)
+          if ($points.Count -ne 10) { throw 'A chip curve has exactly 10 points' }
+          $last = 0
+          foreach ($point in $points) {
+            if ([int]$point.temp -lt $last -or [int]$point.temp -gt 255 -or [int]$point.duty -lt 0 -or [int]$point.duty -gt 255) {
+              throw 'Chip curve points must rise in temperature and stay within 0-255'
+            }
+            $last = [int]$point.temp
+          }
+          # Don't let LibreHardwareMonitor's manual mode linger on this header.
+          $control = $controls[[string]$request.control]
+          if ($touched.ContainsKey([string]$request.control)) { $control.SetDefault(); $touched.Remove([string]$request.control) }
+          $curve = Use-ChipLock {
+            $mode = Read-Reg $nct $chipModeReg
+            $engine = Read-Reg $nct $chipEngineReg
+            if ($mode -ne $chipSmartFanIV -or ($engine -band $chipEngineOn) -eq 0) {
+              throw ('Header is not in the expected curve mode (0x02={0:X2}, 0x1C={1:X2}); nothing written' -f $mode, $engine)
+            }
+            # Same order as Armoury Crate: pause the curve engine, write the points, resume it.
+            Write-Reg $nct $chipEngineReg ($engine -band (-bnot $chipEngineOn))
+            try {
+              for ($i = 0; $i -lt 10; $i++) {
+                Write-Reg $nct $chipTempRegs[$i] ([int]$points[$i].temp)
+                Write-Reg $nct $chipDutyRegs[$i] ([int]$points[$i].duty)
+              }
+            } finally {
+              Write-Reg $nct $chipEngineReg $engine
+            }
+            Read-ChipCurve $nct
+          }
+          Send @{ id = $request.id; ok = $true; curve = $curve }
         }
         default { throw "Unknown command $($request.cmd)" }
       }

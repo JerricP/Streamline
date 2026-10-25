@@ -5,8 +5,13 @@ import {
   RAMP_DOWN_PER_TICK,
   RAMP_UP_PER_TICK,
   STALL_TICKS,
+  CHIP_POINTS,
   canControl,
+  canSetDuty,
   checkStall,
+  chipCurveDuty,
+  chipCurvePoints,
+  usesChipCurve,
   evaluateCurve,
   fanChannels,
   fanIdForControl,
@@ -66,9 +71,41 @@ test('a fan that spins under the BIOS and stops under Streamline is a stall', ()
   assert.equal(checkStall({ seenSpinning: true, zeroTicks: 99 }, 0, 10).stalled, false)
 })
 
-test('fans on chips Streamline cannot drive are listed but not controllable', () => {
-  assert.equal(canControl('/lpc/nct6701d/0/control/0'), false)
-  assert.equal(canControl('/lpc/nct6799d/0/control/0'), true)
+test('NCT6701D headers are driven by chip curve, never by duty, and only the verified ones', () => {
+  assert.equal(canSetDuty('/lpc/nct6701d/0/control/0'), false)
+  assert.equal(usesChipCurve('/lpc/nct6701d/0/control/0'), true)
+  assert.equal(canControl('/lpc/nct6701d/0/control/0'), true)
+  assert.equal(canControl('/lpc/nct6701d/0/control/1'), false)
+  assert.equal(canSetDuty('/lpc/nct6799d/0/control/0'), true)
+  assert.equal(usesChipCurve('/lpc/nct6799d/0/control/0'), false)
+})
+
+test('chip curves have 10 rising points, a 0 °C start and a 100% panic point', () => {
+  const points = chipCurvePoints(curve)
+  assert.equal(points.length, CHIP_POINTS)
+  assert.deepEqual(points.slice(0, 5), [
+    { temp: 0, duty: 51 },
+    { temp: 30, duty: 51 },
+    { temp: 60, duty: 128 },
+    { temp: 80, duty: 255 },
+    { temp: PANIC_TEMP, duty: 255 }
+  ])
+  assert.ok(points.every((point, index) => index === 0 || point.temp >= points[index - 1].temp))
+  assert.deepEqual(points[9], { temp: PANIC_TEMP, duty: 255 })
+  assert.equal(Math.round(chipCurveDuty(points, 45)), 35)
+})
+
+test('chip curves keep the panic point when every slot is used, and honour the floor', () => {
+  const many = { ...curve, minDuty: 30, points: [20, 30, 40, 50, 60, 70, 75, 78].map((temp) => ({ temp, duty: 10 })) }
+  const points = chipCurvePoints(many)
+  assert.equal(points.length, CHIP_POINTS)
+  assert.deepEqual(points[9], { temp: PANIC_TEMP, duty: 255 })
+  assert.ok(points.slice(0, 9).every((point) => point.duty === 77))
+  const fixed = chipCurvePoints({ ...curve, mode: 'fixed', fixedDuty: 60 })
+  assert.deepEqual(fixed.slice(0, 2), [
+    { temp: 0, duty: 153 },
+    { temp: PANIC_TEMP, duty: 255 }
+  ])
 })
 
 test('sanitize sorts, rounds and clamps points', () => {

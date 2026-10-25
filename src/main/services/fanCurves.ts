@@ -32,14 +32,76 @@ export const RAMP_DOWN_PER_TICK = 3
 export const CONTROLLABLE_HARDWARE = ['SuperIO', 'EmbeddedController', 'Cooler']
 
 /**
- * Controls LibreHardwareMonitorLib 0.9.6 can read but not drive correctly.
- * On the ROG Strix B850-I (NCT6701D) any duty it sets, even 100%, stopped the
- * AIO radiator fans (tested 2026-10-25), so these stay on the BIOS.
+ * Controls whose duty LibreHardwareMonitorLib 0.9.6 can't set correctly. On
+ * the ROG Strix B850-I (NCT6701D) any duty it set, even 100%, stopped the AIO
+ * radiator fans (tested 2026-10-25): it switches the header to manual PWM but
+ * leaves the chip's DC curve, which is all zeros, powering the fan.
  */
-const UNSUPPORTED_CONTROLS = [/^\/lpc\/nct6701d\//]
+const NO_DUTY_CONTROLS = [/^\/lpc\/nct6701d\//]
+
+/** Streamline can drive this fan by setting its duty every second. */
+export function canSetDuty(controlId: string): boolean {
+  return !NO_DUTY_CONTROLS.some((pattern) => pattern.test(controlId))
+}
+
+/**
+ * NCT6701D headers that are driven the way Armoury Crate does it: by writing
+ * the chip's own 10-point curve, which it then runs by itself. Only headers
+ * whose register bank was verified on the B850-I are listed (the helper keeps
+ * the same list); the rest stay read-only. CPU_FAN (control/1, bank 2) is
+ * left out until chip curves are proven on the chassis header, because on
+ * this PC it drives the AIO pump.
+ */
+const CHIP_CURVE_CONTROLS = ['/lpc/nct6701d/0/control/0']
+
+export function usesChipCurve(controlId: string): boolean {
+  return CHIP_CURVE_CONTROLS.includes(controlId)
+}
 
 export function canControl(controlId: string): boolean {
-  return !UNSUPPORTED_CONTROLS.some((pattern) => pattern.test(controlId))
+  return canSetDuty(controlId) || usesChipCurve(controlId)
+}
+
+/** A point as the chip stores it: °C and duty 0-255. */
+export interface ChipPoint {
+  temp: number
+  duty: number
+}
+
+export const CHIP_POINTS = 10
+/** The chip's curve temperatures are whole °C; keep them in a sane range. */
+const CHIP_MAX_TEMP = 100
+
+const toChipDuty = (percent: number) => Math.round((clamp(percent, 0, 100) * 255) / 100)
+
+/**
+ * Turns a fan setting into the chip's 10 points. The chip follows its own CPU
+ * temperature input, so a curve's chosen source doesn't apply. Below the first
+ * point the fan holds the first duty, a point at PANIC_TEMP forces 100% (as
+ * the software curves do), and unused slots repeat the last point, as ASUS does.
+ */
+export function chipCurvePoints(config: FanChannelConfig): ChipPoint[] {
+  const floor = config.minDuty ?? 0
+  const user =
+    config.mode === 'fixed'
+      ? [{ temp: 0, duty: config.fixedDuty }]
+      : [...config.points].sort((a, b) => a.temp - b.temp)
+  let points = user.map((point) => ({ temp: Math.round(clamp(point.temp, 0, CHIP_MAX_TEMP)), duty: Math.max(floor, point.duty) }))
+  if (points[0].temp > 0) points.unshift({ temp: 0, duty: points[0].duty })
+  if (points[points.length - 1].temp < PANIC_TEMP) points.push({ temp: PANIC_TEMP, duty: 100 })
+  // Keep the panic point even if the user used every slot.
+  if (points.length > CHIP_POINTS) points = [...points.slice(0, CHIP_POINTS - 1), points[points.length - 1]]
+  while (points.length < CHIP_POINTS) points.push({ ...points[points.length - 1] })
+  return points.map((point) => ({ temp: point.temp, duty: toChipDuty(point.duty) }))
+}
+
+/** Duty the chip should be running at this temperature, in percent. */
+export function chipCurveDuty(points: ChipPoint[], temp: number): number {
+  return (evaluateCurve(points, temp) * 100) / 255
+}
+
+export function sameChipCurve(a: ChipPoint[], b: ChipPoint[]): boolean {
+  return a.length === b.length && a.every((point, index) => point.temp === b[index].temp && point.duty === b[index].duty)
 }
 
 export const DEFAULT_POINTS: FanCurvePoint[] = [
@@ -214,7 +276,8 @@ export function fanChannels(
           const fan = hardware.sensors.find((sensor) => sensor.id === fanIdForControl(control.id)) ?? null
           // Merge so settings saved before a field existed still get its default.
           const config = { ...defaultConfig(fallbackSource), ...configs[control.id] }
-          const source = findSensor(snapshot, config.sourceId)
+          // Chip curves follow the chip's own CPU input; show the CPU temperature for them.
+          const source = findSensor(snapshot, usesChipCurve(control.id) ? fallbackSource : config.sourceId)
           return {
             controlId: control.id,
             fanId: fan?.id ?? null,
@@ -226,6 +289,7 @@ export function fanChannels(
             sourceTemp: source?.value ?? null,
             stalled: stalled.has(control.id),
             controllable: canControl(control.id),
+            chipCurve: usesChipCurve(control.id),
             config
           }
         })

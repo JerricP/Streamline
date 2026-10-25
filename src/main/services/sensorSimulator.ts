@@ -123,6 +123,14 @@ export class SimulatedBackend implements SensorBackend {
     if (this.duty.has(controlId)) this.duty.set(controlId, null)
   }
 
+  async readChipCurve(): Promise<never> {
+    throw new Error('The simulator has no chip curves.')
+  }
+
+  async writeChipCurve(): Promise<never> {
+    throw new Error('The simulator has no chip curves.')
+  }
+
   onExit(): void {}
 
   close(): void {

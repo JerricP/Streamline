@@ -10,8 +10,19 @@ import type {
   MonitorStatus,
   SensorSnapshot
 } from '@shared/types'
-import { canControl, checkStall, fanIdForControl, findSensor, targetDuty } from './fanCurves'
-import type { StallState } from './fanCurves'
+import {
+  canSetDuty,
+  checkStall,
+  chipCurveDuty,
+  chipCurvePoints,
+  fanIdForControl,
+  findSensor,
+  preferredSource,
+  sameChipCurve,
+  targetDuty,
+  usesChipCurve
+} from './fanCurves'
+import type { ChipPoint, StallState } from './fanCurves'
 import { SimulatedBackend } from './sensorSimulator'
 import type { Logger } from './logger'
 
@@ -40,6 +51,9 @@ export interface SensorBackend {
   set(controlId: string, duty: number): Promise<void>
   /** Hand the fan back to the BIOS. */
   restore(controlId: string): Promise<void>
+  /** NCT6701D only: the header's own 10-point curve (see usesChipCurve). */
+  readChipCurve(controlId: string): Promise<ChipPoint[]>
+  writeChipCurve(controlId: string, points: ChipPoint[]): Promise<ChipPoint[]>
   close(): void
   onExit(listener: (reason: string) => void): void
 }
@@ -60,6 +74,7 @@ interface HelperMessage {
   elevated?: boolean
   driverInstalled?: boolean
   hardware?: HardwareReading[]
+  curve?: { mode: number; engine: number; points: ChipPoint[] }
 }
 
 function isElevated(): Promise<boolean> {
@@ -258,6 +273,14 @@ class HelperBackend implements SensorBackend {
     await this.request({ cmd: 'default', control: controlId })
   }
 
+  async readChipCurve(controlId: string): Promise<ChipPoint[]> {
+    return (await this.request({ cmd: 'chipCurveRead', control: controlId })).curve?.points ?? []
+  }
+
+  async writeChipCurve(controlId: string, points: ChipPoint[]): Promise<ChipPoint[]> {
+    return (await this.request({ cmd: 'chipCurveWrite', control: controlId, points })).curve?.points ?? []
+  }
+
   onExit(listener: (reason: string) => void): void {
     this.exitListeners.push(listener)
   }
@@ -295,7 +318,13 @@ export interface SensorServiceOptions {
   simulate: boolean
   /** Current fan settings, read every tick so edits apply within a second. */
   fanConfigs: () => Record<string, FanChannelConfig>
+  /** Each chip-curve header's curve from before Streamline first wrote it. */
+  chipOriginals: () => Record<string, ChipPoint[]>
+  saveChipOriginal: (controlId: string, points: ChipPoint[]) => void
 }
+
+/** How often chip curves are read back, to catch Armoury Crate rewriting them. */
+const CHIP_VERIFY_TICKS = 30
 
 export class SensorService {
   private backend: SensorBackend | null = null
@@ -310,6 +339,9 @@ export class SensorService {
   private readonly stallStates = new Map<string, StallState>()
   /** Stalled controls, with the settings they stalled on; new settings retry. */
   private readonly stalledConfigs = new Map<string, string>()
+  /** Chip curves Streamline has written and expects to find on the chip. */
+  private readonly chipApplied = new Map<string, ChipPoint[]>()
+  private tickCount = 0
   private readonly options: SensorServiceOptions
 
   constructor(options: SensorServiceOptions) {
@@ -360,6 +392,7 @@ export class SensorService {
           : 'The PawnIO driver is not installed, so motherboard fans and temperatures are missing.'
       }
       this.state = 'running'
+      await this.applyChipCurves()
       this.timer = setInterval(() => void this.tick(), TICK_MS)
       logger.info('sensors', `Monitoring started (${this.latest?.hardware.length ?? 0} devices)`)
     } catch (error) {
@@ -381,9 +414,51 @@ export class SensorService {
     this.targets.clear()
     this.stallStates.clear()
     this.stalledConfigs.clear()
+    // Chip curves keep running on the chip; they're re-checked on the next start.
+    this.chipApplied.clear()
     this.latest = null
     this.state = state
     this.message = message
+  }
+
+  /**
+   * Apply a saved fan setting right away. Duty-driven fans pick it up on the
+   * next tick anyway; chip-curve headers (NCT6701D) are written here: the
+   * original curve is saved before the first write so BIOS mode can put it back.
+   */
+  async applyFanConfig(controlId: string, config: FanChannelConfig): Promise<void> {
+    if (!usesChipCurve(controlId)) return
+    const backend = this.backend
+    if (!backend || this.state !== 'running') throw new Error('Turn on monitoring first.')
+    this.stalledConfigs.delete(controlId)
+    const original = this.options.chipOriginals()[controlId]
+    if (config.mode === 'bios') {
+      if (original && this.chipApplied.has(controlId)) {
+        await backend.writeChipCurve(controlId, original)
+        this.options.logger.info('fans', `${controlId}: original chip curve restored`)
+      }
+      this.chipApplied.delete(controlId)
+      return
+    }
+    if (!original) this.options.saveChipOriginal(controlId, await backend.readChipCurve(controlId))
+    const points = chipCurvePoints(config)
+    const written = await backend.writeChipCurve(controlId, points)
+    if (!sameChipCurve(points, written)) throw new Error('The fan chip did not keep the curve that was written.')
+    this.chipApplied.set(controlId, points)
+    this.options.logger.info('fans', `${controlId}: chip curve ${points.map((point) => `${point.temp}:${point.duty}`).join(' ')}`)
+  }
+
+  /** Re-write every saved chip curve, e.g. at start-up or after Armoury Crate restored its own on resume. */
+  async applyChipCurves(): Promise<void> {
+    const configs = this.options.fanConfigs()
+    for (const [controlId, config] of Object.entries(configs)) {
+      if (!usesChipCurve(controlId) || config.mode === 'bios') continue
+      try {
+        await this.applyFanConfig(controlId, config)
+      } catch (error) {
+        this.options.logger.warn('fans', `${controlId}: could not apply chip curve: ${String(error)}`)
+      }
+    }
   }
 
   /** Read every sensor, then move each software-controlled fan toward its curve. */
@@ -391,12 +466,17 @@ export class SensorService {
     const backend = this.backend
     if (!backend || this.ticking) return
     this.ticking = true
+    this.tickCount += 1
     try {
       const snapshot = { at: Date.now(), hardware: await backend.read() }
       this.latest = snapshot
       const configs = this.options.fanConfigs()
       const controls = snapshot.hardware.flatMap((hardware) => hardware.sensors.filter((sensor) => sensor.type === 'Control'))
       for (const control of controls) {
+        if (usesChipCurve(control.id)) {
+          await this.checkChipCurve(backend, snapshot, control.id)
+          continue
+        }
         const config = configs[control.id]
         const configKey = JSON.stringify(config ?? null)
         if (this.stalledConfigs.has(control.id) && this.stalledConfigs.get(control.id) !== configKey) {
@@ -405,7 +485,9 @@ export class SensorService {
         const stalled = this.stalledConfigs.has(control.id)
         const previous = this.targets.get(control.id) ?? null
         const next =
-          config && !stalled && canControl(control.id) ? targetDuty(config, findSensor(snapshot, config.sourceId)?.value ?? null, previous) : null
+          config && !stalled && canSetDuty(control.id)
+            ? targetDuty(config, findSensor(snapshot, config.sourceId)?.value ?? null, previous)
+            : null
 
         const rpm = findSensor(snapshot, fanIdForControl(control.id))?.value ?? null
         const stall = checkStall(this.stallStates.get(control.id), rpm, previous)
@@ -434,6 +516,34 @@ export class SensorService {
       if (this.backend === backend) this.options.logger.warn('sensors', `Sensor update failed: ${String(error)}`)
     } finally {
       this.ticking = false
+    }
+  }
+
+  /**
+   * The chip runs the curve itself, so Streamline only watches: if the fan
+   * stops while the curve says it should spin, the original curve goes back;
+   * every so often the curve is read back in case Armoury Crate replaced it.
+   */
+  private async checkChipCurve(backend: SensorBackend, snapshot: SensorSnapshot, controlId: string): Promise<void> {
+    const applied = this.chipApplied.get(controlId)
+    if (!applied) return
+    const temp = findSensor(snapshot, preferredSource(snapshot))?.value ?? null
+    const expected = temp === null ? 100 : chipCurveDuty(applied, temp)
+    const rpm = findSensor(snapshot, fanIdForControl(controlId))?.value ?? null
+    const stall = checkStall(this.stallStates.get(controlId), rpm, expected)
+    this.stallStates.set(controlId, stall.next)
+    if (stall.stalled) {
+      this.options.logger.warn('fans', `${controlId} stopped on its chip curve; restoring the original curve`)
+      this.stalledConfigs.set(controlId, JSON.stringify(this.options.fanConfigs()[controlId] ?? null))
+      this.stallStates.set(controlId, { ...stall.next, zeroTicks: 0 })
+      this.chipApplied.delete(controlId)
+      const original = this.options.chipOriginals()[controlId]
+      if (original) await backend.writeChipCurve(controlId, original)
+      return
+    }
+    if (this.tickCount % CHIP_VERIFY_TICKS === 0 && !sameChipCurve(applied, await backend.readChipCurve(controlId))) {
+      this.options.logger.warn('fans', `${controlId}: chip curve was changed by something else; writing it again`)
+      await backend.writeChipCurve(controlId, applied)
     }
   }
 }

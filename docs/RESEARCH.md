@@ -116,11 +116,30 @@ AIO Pump (control/6), plus Tctl/Tdie and the NVMe drives.
 Chassis Fan to 51%, and then to a fixed 100%, dropped it to 0 RPM while the
 chip read back the duty that was written. LHM has no NCT6701D-specific code:
 it takes manual control the way it does for older Nuvoton chips (mode
-register 0x102 ← 0, duty to 0x109). Until that is understood, Streamline
-lists NCT6701D fans read-only and keeps them on the BIOS (`canControl` in
-`fanCurves.ts`). Next lead: drive the chip's own SmartFan curve registers,
-which is what Armoury Crate's `AsusFanControlService` appears to do, instead
-of manual duty.
+register 0x102 ← 0, duty to 0x109). 
+
+Armoury Crate's `AsusFanControlService` (native C++, port I/O through
+`AsIO3.sys`, log in `ProgramData\ASUS\ARMOURY CRATE Diagnosis\asuslog`)
+never uses manual duty on this chip. Per header bank (Chassis = 0x01,
+CPU = 0x02, Extra Flow = 0x0A, AIO Pump = 0x0B) it keeps SmartFan IV
+(0x02 = 0x40) with the dual DC/PWM curve engine on (0x1C = 0x82), and writes a
+10-point PWM curve: temperatures at 0x11-0x14, 0x80-0x85 and duties (0-255) at
+0x17-0x1A, 0x86-0x8B, pausing the engine (0x1C bit 7) while it writes. The DC
+points (0x21-0x24, 0x27-0x2A, 0x70-0x7B) are all zero. A read-only register
+dump matched Armoury Crate's saved curves exactly. LHM's manual mode
+(0x02 = 0) leaves the dual-mode engine on with those zero DC points, which
+fits the fans losing power while the duty register reads 51% or 100%.
+
+So Streamline now drives NCT6701D headers the same way ("chip curves"): the
+helper writes the 10 points through LHM's own `Nct677X.ReadByte/WriteByte`
+(reflection) under the ISA bus and `Global\ASUS_SIO_MUTEX` locks, refusing
+unless the header is in SmartFan IV with the engine on, and reads them back.
+The original curve is saved before the first write and BIOS mode writes it
+back. The chip follows its own CPU temperature input and keeps running the
+curve when Streamline is closed. A 95 °C point at 100% is always included,
+the stall guard watches RPM, and curves are re-checked every 30 s and after
+resume (Armoury Crate rewrites its curves on service start and resume).
+Only the Chassis header is enabled until this is proven on the real board.
 
 Also added after this test: a stall guard (a fan that has spun before and
 reads 0 RPM for 6 s at ≥25% goes back to the BIOS), a per-fan minimum speed,

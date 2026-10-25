@@ -173,6 +173,12 @@ export interface FanChannel {
   stalled: boolean
   /** False for chips Streamline can read but not yet drive safely; they stay on the BIOS. */
   controllable: boolean
+  /**
+   * Driven by writing the fan chip's own curve (as Armoury Crate does) rather
+   * than a duty every second. The chip follows its own CPU temperature input,
+   * and keeps running the curve when Streamline isn't.
+   */
+  chipCurve: boolean
   config: FanChannelConfig
 }
 

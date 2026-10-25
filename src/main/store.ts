@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { DriverReport, FanChannelConfig, LightingState, Settings } from '@shared/types'
+import type { ChipPoint } from './services/fanCurves'
 import type { Paths } from './services/paths'
 
 export interface Database {
@@ -13,6 +14,8 @@ export interface Database {
   monitoringEnabled: boolean
   /** Fan settings keyed by control sensor id. */
   fans: Record<string, FanChannelConfig>
+  /** NCT6701D headers' own curves from before Streamline first rewrote them; BIOS mode restores these. */
+  chipOriginals: Record<string, ChipPoint[]>
 }
 
 const SCHEMA_VERSION = 1
@@ -30,7 +33,8 @@ function emptyDatabase(): Database {
     lighting: null,
     lastDriverReport: null,
     monitoringEnabled: false,
-    fans: {}
+    fans: {},
+    chipOriginals: {}
   }
 }
 
@@ -57,7 +61,8 @@ export class Store {
         lighting: parsed.lighting ?? null,
         lastDriverReport: parsed.lastDriverReport ?? null,
         monitoringEnabled: parsed.monitoringEnabled === true,
-        fans: parsed.fans ?? {}
+        fans: parsed.fans ?? {},
+        chipOriginals: parsed.chipOriginals ?? {}
       }
     } catch {
       return emptyDatabase()

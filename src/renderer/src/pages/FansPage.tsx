@@ -7,7 +7,11 @@ import { usePolling } from '../lib/sensors'
 import { useApp } from '../state/AppState'
 
 const MODES: Array<{ mode: FanMode; label: string; hint: string }> = [
-  { mode: 'bios', label: 'BIOS', hint: "The board's own Q-Fan settings decide. Same as when Streamline isn't running." },
+  {
+    mode: 'bios',
+    label: 'BIOS',
+    hint: "The board's own Q-Fan settings decide. Same as when Streamline isn't running."
+  },
   { mode: 'curve', label: 'Curve', hint: 'Follow a temperature along the curve below.' },
   { mode: 'fixed', label: 'Fixed', hint: 'Run at one speed all the time.' }
 ]
@@ -113,8 +117,13 @@ export function FansPage() {
   }
 
   const dirty = channel && draft ? !sameConfig(channel.config, draft) : false
-  const lowestDuty = draft ? (draft.mode === 'fixed' ? draft.fixedDuty : Math.min(...draft.points.map((point) => point.duty))) : 100
-  const cpuFanTooLow = channel && draft && draft.mode !== 'bios' && /cpu/i.test(channel.name) && lowestDuty < CPU_FAN_FLOOR
+  const lowestDuty = draft
+    ? draft.mode === 'fixed'
+      ? draft.fixedDuty
+      : Math.min(...draft.points.map((point) => point.duty))
+    : 100
+  const cpuFanTooLow =
+    channel && draft && draft.mode !== 'bios' && /cpu/i.test(channel.name) && lowestDuty < CPU_FAN_FLOOR
   const looksLikePump = channel && draft && draft.mode !== 'bios' && (channel.rpm ?? 0) > PUMP_RPM
   const source = status?.temperatures.find((entry) => entry.id === draft?.sourceId)
 
@@ -172,7 +181,9 @@ export function FansPage() {
                   onChange={(event) => setDraft({ ...draft, name: event.target.value || null })}
                 />
                 <div className="fans__live">
-                  {channel.sourceTemp !== null && draft.mode === 'curve' && <span>{channel.sourceTemp.toFixed(1)}°C</span>}
+                  {channel.sourceTemp !== null && draft.mode === 'curve' && (
+                    <span>{channel.sourceTemp.toFixed(1)}°C</span>
+                  )}
                   <span>{channel.duty === null ? '—' : `${Math.round(channel.duty)}%`}</span>
                   <span>{channel.rpm === null ? 'no RPM' : `${Math.round(channel.rpm)} RPM`}</span>
                 </div>
@@ -184,14 +195,20 @@ export function FansPage() {
 
               {!channel.controllable && (
                 <p className="panel__text panel__text--error">
-                  Streamline can read this fan but can't set its speed safely on this board yet: on the ROG Strix B850-I's
-                  fan chip, any speed it set stopped the fan. It stays on the BIOS curve. You can still rename it.
+                  Streamline can read this fan but can't set its speed safely on this board yet, so it stays on the BIOS
+                  curve. You can still rename it.
+                </p>
+              )}
+              {channel.chipCurve && (
+                <p className="panel__text">
+                  Saved curves are written into the fan chip, the way Armoury Crate does it, and keep running even when
+                  Streamline is closed. BIOS puts back the curve that was there before.
                 </p>
               )}
               {channel.stalled && (
                 <p className="panel__text panel__text--error">
-                  This fan stopped spinning when Streamline set its speed, so it was handed back to the BIOS. Save again to
-                  retry.
+                  This fan stopped spinning when Streamline set its speed, so it was handed back to the BIOS. Save again
+                  to retry.
                 </p>
               )}
 
@@ -233,22 +250,28 @@ export function FansPage() {
               {draft.mode === 'curve' && (
                 <>
                   <div className="toolbar" style={{ marginBottom: 12 }}>
-                    <label className="field__inline" htmlFor="curve-source">
-                      Follows
-                    </label>
-                    <select
-                      id="curve-source"
-                      className="select"
-                      value={draft.sourceId ?? ''}
-                      onChange={(event) => setDraft({ ...draft, sourceId: event.target.value || null })}
-                    >
-                      {status?.temperatures.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.hardware} · {entry.name}
-                          {entry.value === null ? '' : ` (${entry.value.toFixed(0)}°C)`}
-                        </option>
-                      ))}
-                    </select>
+                    {channel.chipCurve ? (
+                      <span className="field__inline">Follows the fan chip's own CPU temperature</span>
+                    ) : (
+                      <>
+                        <label className="field__inline" htmlFor="curve-source">
+                          Follows
+                        </label>
+                        <select
+                          id="curve-source"
+                          className="select"
+                          value={draft.sourceId ?? ''}
+                          onChange={(event) => setDraft({ ...draft, sourceId: event.target.value || null })}
+                        >
+                          {status?.temperatures.map((entry) => (
+                            <option key={entry.id} value={entry.id}>
+                              {entry.hardware} · {entry.name}
+                              {entry.value === null ? '' : ` (${entry.value.toFixed(0)}°C)`}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
                     <span className="toolbar__spacer" />
                     {PRESETS.map((preset) => (
                       <button
@@ -263,7 +286,7 @@ export function FansPage() {
                   <FanCurveEditor
                     points={draft.points}
                     onChange={(points) => setDraft({ ...draft, points })}
-                    currentTemp={source?.value ?? null}
+                    currentTemp={channel.chipCurve ? channel.sourceTemp : (source?.value ?? null)}
                     currentDuty={dirty ? null : channel.target}
                   />
                 </>
@@ -302,7 +325,11 @@ export function FansPage() {
                 <button className="button button--primary" onClick={() => void save()} disabled={!dirty || saving}>
                   {saving ? 'Saving…' : 'Save'}
                 </button>
-                <button className="button" onClick={() => setDraft(structuredClone(channel.config))} disabled={!dirty || saving}>
+                <button
+                  className="button"
+                  onClick={() => setDraft(structuredClone(channel.config))}
+                  disabled={!dirty || saving}
+                >
                   Revert
                 </button>
               </div>

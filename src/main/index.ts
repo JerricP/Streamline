@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, shell } from 'electron'
+import { app, powerMonitor, shell } from 'electron'
 import type { LightingMode, Settings } from '@shared/types'
 import { createHandlers } from './handlers'
 import { AuraService } from './services/aura'
@@ -60,7 +60,12 @@ if (!app.requestSingleInstanceLock()) {
       logger,
       helperPaths: { script: join(resources, 'sensors', 'StreamlineSensors.ps1'), libDir: join(resources, 'lhm') },
       simulate: process.env['STREAMLINE_SIMULATE_SENSORS'] === '1',
-      fanConfigs: () => activeStore.snapshot.fans
+      fanConfigs: () => activeStore.snapshot.fans,
+      chipOriginals: () => activeStore.snapshot.chipOriginals,
+      saveChipOriginal: (controlId, points) =>
+        activeStore.mutate((db) => {
+          db.chipOriginals = { ...db.chipOriginals, [controlId]: points }
+        })
     })
     sensors = activeSensors
     const handlers = createHandlers({
@@ -105,6 +110,11 @@ if (!app.requestSingleInstanceLock()) {
     // covers boards that fall back to the BIOS default on a cold boot.
     const saved = activeStore.snapshot.lighting
     if (saved) aura.apply(saved).catch((error) => logger.warn('aura', `Start-up apply skipped: ${String(error)}`))
+
+    // Armoury Crate's fan service puts its own chip curves back on resume.
+    powerMonitor.on('resume', () => {
+      setTimeout(() => void activeSensors.applyChipCurves(), 10_000)
+    })
 
     if (activeStore.snapshot.monitoringEnabled) {
       activeSensors.start().catch((error) => logger.warn('sensors', `Start-up monitoring skipped: ${String(error)}`))
