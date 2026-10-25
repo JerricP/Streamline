@@ -94,7 +94,8 @@ try {
       $item = $queue.Dequeue()
       $hw = $item[0]
       $hw.Update()
-      $name = if ($item[1]) { "$($item[1]) · $($hw.Name)" } else { $hw.Name }
+      # The script file is read as ANSI by Windows PowerShell 5.1, so build the dot from its code point.
+      $name = if ($item[1]) { "$($item[1]) $([char]0x00B7) $($hw.Name)" } else { $hw.Name }
       $sensors = New-Object System.Collections.ArrayList
       foreach ($sensor in $hw.Sensors) {
         $id = $sensor.Identifier.ToString()
