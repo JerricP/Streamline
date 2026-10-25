@@ -441,3 +441,264 @@ details[open] > .panel__summary {
 .status--up-to-date {
   color: var(--success);
 }
+
+/* ---- Sensors ----------------------------------------------------------- */
+
+.panel__text {
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+.panel__text--error {
+  color: var(--danger);
+}
+.notice a {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.notice code {
+  background: var(--bg-sunken);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.tile {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px 10px;
+}
+.tile__label {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile__value {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 4px 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.spark {
+  width: 100%;
+  height: 28px;
+  display: block;
+}
+.spark polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.sensor-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px 24px;
+}
+.sensor-group__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.sensor-table__head,
+.sensor-table__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 72px 72px;
+  gap: 8px;
+  padding: 5px 0;
+  font-variant-numeric: tabular-nums;
+}
+.sensor-table__head {
+  font-size: 11px;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+.sensor-table__row {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  color: var(--text-dim);
+}
+.sensor-table__row span:first-child {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sensor-table__head span:not(:first-child),
+.sensor-table__row span:not(:first-child) {
+  text-align: right;
+}
+.sensor-table__now {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- Fans -------------------------------------------------------------- */
+
+.fans {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.fans__list {
+  display: grid;
+  gap: 10px;
+}
+.fan-card {
+  text-align: left;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  color: var(--text);
+}
+.fan-card:hover {
+  border-color: var(--text-faint);
+}
+.fan-card--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.fan-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.fan-card__name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fan-card__stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 6px 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+.fan-card__bar {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.fan-card__bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.fans__editor {
+  margin-bottom: 0;
+}
+.fans__editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.fans__live {
+  display: flex;
+  gap: 14px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.fans__editor .chip-row {
+  margin-bottom: 8px;
+}
+.field__inline {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.toolbar__spacer {
+  flex: 1;
+}
+.slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.curve__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  user-select: none;
+  touch-action: none;
+}
+.curve__svg--dragging {
+  cursor: grabbing;
+}
+.curve__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.curve__axis {
+  fill: var(--text-faint);
+  font-size: 11px;
+}
+.curve__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.curve__point {
+  fill: var(--bg-elevated);
+  stroke: var(--accent);
+  stroke-width: 3;
+  cursor: grab;
+  outline: none;
+}
+.curve__point:hover,
+.curve__point--active {
+  fill: var(--accent);
+}
+.curve__live line {
+  stroke: var(--success);
+  stroke-dasharray: 4 4;
+}
+.curve__live circle {
+  fill: var(--success);
+}
+.curve__live text {
+  fill: var(--success);
+  font-size: 11px;
+}
+.curve__tip rect {
+  fill: var(--text);
+}
+.curve__tip text {
+  fill: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.curve__help {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
+@media (max-width: 860px) {
+  .fans {
+    grid-template-columns: 1fr;
+  }
+}

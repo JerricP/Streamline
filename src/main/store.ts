@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { DriverReport, LightingState, Settings } from '@shared/types'
+import type { DriverReport, FanChannelConfig, LightingState, Settings } from '@shared/types'
 import type { Paths } from './services/paths'
 
 export interface Database {
@@ -9,6 +9,10 @@ export interface Database {
   /** The lighting last applied, re-applied on start-up. */
   lighting: LightingState | null
   lastDriverReport: DriverReport | null
+  /** Turned on from the Overview page; starts the sensor helper at launch. */
+  monitoringEnabled: boolean
+  /** Fan settings keyed by control sensor id. */
+  fans: Record<string, FanChannelConfig>
 }
 
 const SCHEMA_VERSION = 1
@@ -24,7 +28,9 @@ function emptyDatabase(): Database {
     schemaVersion: SCHEMA_VERSION,
     settings: { ...DEFAULT_SETTINGS },
     lighting: null,
-    lastDriverReport: null
+    lastDriverReport: null,
+    monitoringEnabled: false,
+    fans: {}
   }
 }
 
@@ -49,7 +55,9 @@ export class Store {
         // Merge so newly added settings keys always get a default.
         settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
         lighting: parsed.lighting ?? null,
-        lastDriverReport: parsed.lastDriverReport ?? null
+        lastDriverReport: parsed.lastDriverReport ?? null,
+        monitoringEnabled: parsed.monitoringEnabled === true,
+        fans: parsed.fans ?? {}
       }
     } catch {
       return emptyDatabase()

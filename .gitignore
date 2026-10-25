@@ -24,3 +24,6 @@ Thumbs.db
 
 # Packaged artifacts
 *.asar
+
+# Downloaded by scripts/fetch-lhm.mjs
+resources/lhm/

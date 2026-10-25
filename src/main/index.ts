@@ -5,6 +5,7 @@ import { createHandlers } from './handlers'
 import { AuraService } from './services/aura'
 import { Logger } from './services/logger'
 import { Paths } from './services/paths'
+import { SensorService } from './services/sensors'
 import { Store } from './store'
 import { AppTray } from './tray'
 import { startWebServer } from './webServer'
@@ -24,8 +25,9 @@ if (!app.requestSingleInstanceLock()) {
   let server: WebServer | null = null
   let tray: AppTray | null = null
   let store: Store | null = null
+  let sensors: SensorService | null = null
 
-  const openPage = (page?: 'lighting' | 'drivers') => {
+  const openPage = (page?: 'overview' | 'fans' | 'lighting' | 'drivers') => {
     if (!server) return
     // In development the UI comes from the Vite dev server, which proxies /api.
     const devServerUrl = process.env['ELECTRON_RENDERER_URL']
@@ -52,11 +54,21 @@ if (!app.requestSingleInstanceLock()) {
     logger.info('app', `Streamline ${app.getVersion()} starting (data: ${paths.root})`)
 
     const aura = new AuraService(logger)
+    // Packaged: next to app.asar. Development: the repo's resources folder.
+    const resources = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
+    const activeSensors = new SensorService({
+      logger,
+      helperPaths: { script: join(resources, 'sensors', 'StreamlineSensors.ps1'), libDir: join(resources, 'lhm') },
+      simulate: process.env['STREAMLINE_SIMULATE_SENSORS'] === '1',
+      fanConfigs: () => activeStore.snapshot.fans
+    })
+    sensors = activeSensors
     const handlers = createHandlers({
       paths,
       store: activeStore,
       logger,
       aura,
+      sensors: activeSensors,
       onSettingsChanged: syncLoginItem,
       onLightingChanged: (state) => tray?.setLighting(state)
     })
@@ -94,10 +106,16 @@ if (!app.requestSingleInstanceLock()) {
     const saved = activeStore.snapshot.lighting
     if (saved) aura.apply(saved).catch((error) => logger.warn('aura', `Start-up apply skipped: ${String(error)}`))
 
+    if (activeStore.snapshot.monitoringEnabled) {
+      activeSensors.start().catch((error) => logger.warn('sensors', `Start-up monitoring skipped: ${String(error)}`))
+    }
+
     if (!process.argv.includes(BACKGROUND_FLAG)) openPage()
   })
 
   app.on('before-quit', () => {
+    // Closing the helper hands every fan back to the BIOS.
+    sensors?.stop()
     store?.flushNow()
     tray?.destroy()
     void server?.close()

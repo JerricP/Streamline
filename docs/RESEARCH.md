@@ -62,8 +62,39 @@ WIFI** (Aura controller PID `0x19AF`).
 | Audio | MI_01, "Creative Pebble Pro" |
 | Creative App | `Creative.Platform.Devices.dll` (.NET), `HidLibrary.dll`, `AirohaHidCoreLib.dll` (Airoha chip) |
 
-## Fan control (later)
+## Fan control and sensors
 
 Armoury Crate ships `AsusFanControlService` and talks to the board's Nuvoton
-Super I/O chip (`NCTSmbus`, `Global\ASUS_SIO_MUTEX`). That needs kernel-level
-port access, unlike lighting, so it will be a separate, opt-in step.
+Super I/O chip (`NCTSmbus`, `Global\ASUS_SIO_MUTEX`). That chip sits behind
+I/O ports, so unlike lighting it needs a kernel driver.
+
+| Option | Verdict |
+| --- | --- |
+| Reuse Armoury Crate's driver (AsIO3) | No: undocumented, and its past CVEs are why people avoid it |
+| WinRing0 (old LibreHardwareMonitor, FanControl) | No: flagged as a vulnerable driver by Defender since 2025 |
+| LibreHardwareMonitorLib 0.9.6 + PawnIO | **Used.** PawnIO is a signed driver that only runs small verified modules; LHM ships the Super I/O module |
+
+LibreHardwareMonitorLib 0.9.6 lists the **ROG STRIX B850-I GAMING WIFI** and
+the **NCT6701D** chip by name, so it labels this board's fan headers and
+temperatures. It needs:
+
+- **PawnIO** installed once (`winget install namazso.PawnIO`, or pawnio.eu);
+  without it CPU/GPU/drive sensors still show, but no motherboard fans.
+- **Administrator rights**, because PawnIO only opens for admins.
+
+Streamline stays a normal user-mode app. When monitoring is turned on it
+starts `resources/sensors/StreamlineSensors.ps1` elevated (UAC prompt) under
+Windows PowerShell 5.1, which is .NET Framework and can load LHM's net472
+build directly, so no .NET SDK is needed. The helper connects back to the app
+over a random named pipe, proves itself with a per-launch token, and only
+understands `read`, `set` (duty 0-100 on a known control) and `default`.
+Closing the pipe for any reason makes it call `SetDefault()` on every fan it
+touched, so a crash leaves fans on the BIOS curve, not stuck.
+
+Fan curve safety (`src/main/services/fanCurves.ts`): a curve whose
+temperature can't be read, or reads 95 °C or more, runs at 100%; changes ramp
+(+8%/s, -3%/s) so short CPU spikes don't rev fans; anything that takes a fan
+back from Streamline (e.g. Armoury Crate) is overridden on the next tick.
+
+**Still to verify on the real board:** PawnIO install state, which headers
+LHM names, and that RPM follows duty on each header.

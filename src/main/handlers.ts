@@ -3,16 +3,21 @@ import { CHANNELS } from '@shared/channels'
 import type {
   AppInfo,
   DriverReport,
+  FanChannelConfig,
+  FansStatus,
   LightingMode,
   LightingState,
   LightingStatus,
+  SensorsStatus,
   Settings,
   ThemePreference
 } from '@shared/types'
 import type { AuraService } from './services/aura'
 import { isVendorLightingServiceRunning, parseHexColor } from './services/aura'
 import { checkDrivers } from './services/drivers'
+import { fanChannels, sanitizeFanConfig, temperatureSources } from './services/fanCurves'
 import type { Logger } from './services/logger'
+import type { SensorService } from './services/sensors'
 import type { Paths } from './services/paths'
 import type { Store } from './store'
 
@@ -21,6 +26,7 @@ export interface HandlerContext {
   store: Store
   logger: Logger
   aura: AuraService
+  sensors: SensorService
   /** Called after settings change so the tray and login item can follow. */
   onSettingsChanged: (settings: Settings) => void
   /** Called after lighting is applied so the tray menu can tick the mode. */
@@ -120,6 +126,49 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
       db.lastDriverReport = report
       return report
     })
+  })
+
+  // ---- Sensors and fans ---------------------------------------------------
+  const { sensors } = context
+  const sensorsStatus = (): SensorsStatus => ({ monitor: sensors.status, snapshot: sensors.snapshot })
+
+  handle<SensorsStatus>(CHANNELS.sensorsStatus, sensorsStatus)
+
+  handle<SensorsStatus>(CHANNELS.sensorsStart, async () => {
+    await sensors.start()
+    store.mutate((db) => {
+      db.monitoringEnabled = true
+    })
+    return sensorsStatus()
+  })
+
+  handle<SensorsStatus>(CHANNELS.sensorsStop, () => {
+    // Stopping closes the helper, which hands every fan back to the BIOS.
+    sensors.stop()
+    store.mutate((db) => {
+      db.monitoringEnabled = false
+    })
+    return sensorsStatus()
+  })
+
+  const fansStatus = (): FansStatus => ({
+    monitor: sensors.status,
+    channels: fanChannels(sensors.snapshot, store.snapshot.fans, sensors.targets),
+    temperatures: temperatureSources(sensors.snapshot)
+  })
+
+  handle<FansStatus>(CHANNELS.fansStatus, fansStatus)
+
+  handle<FansStatus>(CHANNELS.fansSave, (controlId: string, input: Partial<FanChannelConfig>) => {
+    if (!fanChannels(sensors.snapshot, {}, sensors.targets).some((channel) => channel.controlId === controlId)) {
+      throw new Error('That fan is not available right now.')
+    }
+    const config = sanitizeFanConfig(input)
+    store.mutate((db) => {
+      db.fans = { ...db.fans, [controlId]: config }
+    })
+    logger.info('fans', `${controlId}: ${config.mode}`)
+    return fansStatus()
   })
 
   // ---- Shell --------------------------------------------------------------
