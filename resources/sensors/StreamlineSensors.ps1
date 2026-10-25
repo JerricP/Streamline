@@ -47,7 +47,7 @@ public static class StreamlineResolver {
 }
 '@
 [StreamlineResolver]::Install($LibDir)
-[void][System.Reflection.Assembly]::LoadFrom((Join-Path $LibDir 'LibreHardwareMonitorLib.dll'))
+$lhmAssembly = [System.Reflection.Assembly]::LoadFrom((Join-Path $LibDir 'LibreHardwareMonitorLib.dll'))
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $elevated = ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -117,18 +117,33 @@ function Read-Reg($nct, [int]$reg) { return [int]$nct.read.Invoke($nct.chip, @([
 function Write-Reg($nct, [int]$reg, [int]$value) { [void]$nct.write.Invoke($nct.chip, @([uint16]($nct.bank * 256 + $reg), [byte]$value)) }
 
 # Hold the same locks LibreHardwareMonitor and Armoury Crate use for the chip.
+# LHM's Mutexes class is internal, so reach its public static methods by
+# reflection. ASUS's lock is an auto-reset event, not a mutex: waiting takes
+# it and Set() hands it back.
+$lhmMutexes = $lhmAssembly.GetType('LibreHardwareMonitor.Hardware.Mutexes', $true)
+$staticFlags = [System.Reflection.BindingFlags]'Public, NonPublic, Static'
+$waitIsaBus = $lhmMutexes.GetMethod('WaitIsaBus', $staticFlags)
+$releaseIsaBus = $lhmMutexes.GetMethod('ReleaseIsaBus', $staticFlags)
+
 function Use-ChipLock([scriptblock]$body) {
-  if (-not [LibreHardwareMonitor.Hardware.Mutexes]::WaitIsaBus(1000)) { throw 'The fan chip is busy' }
+  if (-not $waitIsaBus.Invoke($null, @([int]1000))) { throw 'The fan chip is busy' }
   $asus = $null
+  $asusTaken = $false
   try {
     try {
-      $asus = [System.Threading.Mutex]::OpenExisting('Global\ASUS_SIO_MUTEX')
-      try { [void]$asus.WaitOne(1000) } catch [System.Threading.AbandonedMutexException] { }
-    } catch { $asus = $null }
+      $asus = [System.Threading.EventWaitHandle]::OpenExisting('Global\ASUS_SIO_MUTEX')
+      $asusTaken = $asus.WaitOne(1000)
+      if (-not $asusTaken) { throw 'Armoury Crate is using the fan chip' }
+    } catch [System.Threading.WaitHandleCannotBeOpenedException] {
+      $asus = $null
+    }
     return & $body
   } finally {
-    if ($asus) { try { $asus.ReleaseMutex() } catch { }; $asus.Dispose() }
-    [LibreHardwareMonitor.Hardware.Mutexes]::ReleaseIsaBus()
+    if ($asus) {
+      if ($asusTaken) { [void]$asus.Set() }
+      $asus.Dispose()
+    }
+    [void]$releaseIsaBus.Invoke($null, $null)
   }
 }
 
