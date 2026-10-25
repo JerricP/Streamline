@@ -107,5 +107,21 @@ without driver access), the RTX 5080 and the Radeon iGPU, but no Super I/O
 chip and no drives, as expected without PawnIO and admin. PawnIO was not
 installed and `AsusFanControlService` was running.
 
-**Still to verify on the real board:** with PawnIO and admin, which headers
-LHM names, and that RPM follows duty on each header.
+With PawnIO and admin it found the **Nuvoton NCT6701D** (`/lpc/nct6701d/0`):
+CPU Fan (control/1, an AIO pump at ~2,900 RPM), Chassis Fan (control/0, the
+AIO radiator fans, ~1,130 RPM at 71% on BIOS), Extra Flow Fan (control/5) and
+AIO Pump (control/6), plus Tctl/Tdie and the NVMe drives.
+
+**Fan control does not work on this chip with LHM 0.9.6.** Setting the
+Chassis Fan to 51%, and then to a fixed 100%, dropped it to 0 RPM while the
+chip read back the duty that was written. LHM has no NCT6701D-specific code:
+it takes manual control the way it does for older Nuvoton chips (mode
+register 0x102 ← 0, duty to 0x109). Until that is understood, Streamline
+lists NCT6701D fans read-only and keeps them on the BIOS (`canControl` in
+`fanCurves.ts`). Next lead: drive the chip's own SmartFan curve registers,
+which is what Armoury Crate's `AsusFanControlService` appears to do, instead
+of manual duty.
+
+Also added after this test: a stall guard (a fan that has spun before and
+reads 0 RPM for 6 s at ≥25% goes back to the BIOS), a per-fan minimum speed,
+and fan names.

@@ -15,7 +15,7 @@ import type {
 import type { AuraService } from './services/aura'
 import { isVendorLightingServiceRunning, parseHexColor } from './services/aura'
 import { checkDrivers } from './services/drivers'
-import { fanChannels, sanitizeFanConfig, temperatureSources } from './services/fanCurves'
+import { canControl, fanChannels, fanIdForControl, sanitizeFanConfig, temperatureSources } from './services/fanCurves'
 import type { Logger } from './services/logger'
 import type { SensorService } from './services/sensors'
 import type { Paths } from './services/paths'
@@ -130,7 +130,27 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
 
   // ---- Sensors and fans ---------------------------------------------------
   const { sensors } = context
-  const sensorsStatus = (): SensorsStatus => ({ monitor: sensors.status, snapshot: sensors.snapshot })
+  /** The overview shows fans by the names given on the Fans page. */
+  const sensorsStatus = (): SensorsStatus => {
+    const snapshot = sensors.snapshot
+    const names = new Map<string, string>()
+    for (const [controlId, config] of Object.entries(store.snapshot.fans)) {
+      if (!config.name) continue
+      names.set(controlId, config.name)
+      names.set(fanIdForControl(controlId), config.name)
+    }
+    if (!snapshot || names.size === 0) return { monitor: sensors.status, snapshot }
+    return {
+      monitor: sensors.status,
+      snapshot: {
+        ...snapshot,
+        hardware: snapshot.hardware.map((hardware) => ({
+          ...hardware,
+          sensors: hardware.sensors.map((sensor) => ({ ...sensor, name: names.get(sensor.id) ?? sensor.name }))
+        }))
+      }
+    }
+  }
 
   handle<SensorsStatus>(CHANNELS.sensorsStatus, sensorsStatus)
 
@@ -153,7 +173,7 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
 
   const fansStatus = (): FansStatus => ({
     monitor: sensors.status,
-    channels: fanChannels(sensors.snapshot, store.snapshot.fans, sensors.targets),
+    channels: fanChannels(sensors.snapshot, store.snapshot.fans, sensors.targets, sensors.stalled),
     temperatures: temperatureSources(sensors.snapshot)
   })
 
@@ -164,6 +184,9 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
       throw new Error('That fan is not available right now.')
     }
     const config = sanitizeFanConfig(input)
+    if (config.mode !== 'bios' && !canControl(controlId)) {
+      throw new Error("Streamline can't drive this fan chip safely yet, so it stays on the BIOS. You can still rename it.")
+    }
     store.mutate((db) => {
       db.fans = { ...db.fans, [controlId]: config }
     })

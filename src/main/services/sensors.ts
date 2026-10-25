@@ -10,7 +10,8 @@ import type {
   MonitorStatus,
   SensorSnapshot
 } from '@shared/types'
-import { findSensor, targetDuty } from './fanCurves'
+import { canControl, checkStall, fanIdForControl, findSensor, targetDuty } from './fanCurves'
+import type { StallState } from './fanCurves'
 import { SimulatedBackend } from './sensorSimulator'
 import type { Logger } from './logger'
 
@@ -306,10 +307,17 @@ export class SensorService {
   private latest: SensorSnapshot | null = null
   /** Duty Streamline last set per control; absent while the BIOS is in charge. */
   readonly targets = new Map<string, number>()
+  private readonly stallStates = new Map<string, StallState>()
+  /** Stalled controls, with the settings they stalled on; new settings retry. */
+  private readonly stalledConfigs = new Map<string, string>()
   private readonly options: SensorServiceOptions
 
   constructor(options: SensorServiceOptions) {
     this.options = options
+  }
+
+  get stalled(): ReadonlySet<string> {
+    return new Set(this.stalledConfigs.keys())
   }
 
   get snapshot(): SensorSnapshot | null {
@@ -371,6 +379,8 @@ export class SensorService {
     this.backend = null
     backend?.close()
     this.targets.clear()
+    this.stallStates.clear()
+    this.stalledConfigs.clear()
     this.latest = null
     this.state = state
     this.message = message
@@ -388,8 +398,27 @@ export class SensorService {
       const controls = snapshot.hardware.flatMap((hardware) => hardware.sensors.filter((sensor) => sensor.type === 'Control'))
       for (const control of controls) {
         const config = configs[control.id]
+        const configKey = JSON.stringify(config ?? null)
+        if (this.stalledConfigs.has(control.id) && this.stalledConfigs.get(control.id) !== configKey) {
+          this.stalledConfigs.delete(control.id)
+        }
+        const stalled = this.stalledConfigs.has(control.id)
         const previous = this.targets.get(control.id) ?? null
-        const next = config ? targetDuty(config, findSensor(snapshot, config.sourceId)?.value ?? null, previous) : null
+        const next =
+          config && !stalled && canControl(control.id) ? targetDuty(config, findSensor(snapshot, config.sourceId)?.value ?? null, previous) : null
+
+        const rpm = findSensor(snapshot, fanIdForControl(control.id))?.value ?? null
+        const stall = checkStall(this.stallStates.get(control.id), rpm, previous)
+        this.stallStates.set(control.id, stall.next)
+        if (stall.stalled) {
+          this.options.logger.warn('fans', `${control.id} stopped at ${previous}%; handing it back to the BIOS`)
+          this.stalledConfigs.set(control.id, configKey)
+          this.stallStates.set(control.id, { ...stall.next, zeroTicks: 0 })
+          await backend.restore(control.id)
+          this.targets.delete(control.id)
+          continue
+        }
+
         if (next === null) {
           if (previous !== null || control.software) {
             await backend.restore(control.id)

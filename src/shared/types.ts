@@ -139,7 +139,11 @@ export interface FanCurvePoint {
 export type FanMode = 'bios' | 'fixed' | 'curve'
 
 export interface FanChannelConfig {
+  /** Your name for the header, e.g. "AIO fans"; null keeps the chip's name. */
+  name: string | null
   mode: FanMode
+  /** Streamline never runs this fan slower than this, percent. */
+  minDuty: number
   fixedDuty: number
   /** Temperature sensor the curve follows. */
   sourceId: string | null
@@ -151,7 +155,10 @@ export interface FanChannel {
   controlId: string
   /** The matching RPM sensor, when the chip reports one. */
   fanId: string | null
+  /** Your name if you set one, else the chip's. */
   name: string
+  /** The chip's own name for the header, e.g. "Chassis Fan". */
+  chipName: string
   rpm: number | null
   /** Duty the chip reports now, percent. */
   duty: number | null
@@ -159,6 +166,13 @@ export interface FanChannel {
   target: number | null
   /** The curve's temperature right now. */
   sourceTemp: number | null
+  /**
+   * The fan stopped spinning under Streamline, so it was handed back to the
+   * BIOS. Saving its settings again retries.
+   */
+  stalled: boolean
+  /** False for chips Streamline can read but not yet drive safely; they stay on the BIOS. */
+  controllable: boolean
   config: FanChannelConfig
 }
 

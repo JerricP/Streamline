@@ -4,6 +4,9 @@ import {
   PANIC_TEMP,
   RAMP_DOWN_PER_TICK,
   RAMP_UP_PER_TICK,
+  STALL_TICKS,
+  canControl,
+  checkStall,
   evaluateCurve,
   fanChannels,
   fanIdForControl,
@@ -18,7 +21,7 @@ const points = [
   { temp: 60, duty: 50 },
   { temp: 80, duty: 100 }
 ]
-const curve = { mode: 'curve' as const, fixedDuty: 50, sourceId: '/cpu/t', points }
+const curve = { name: null, mode: 'curve' as const, minDuty: 0, fixedDuty: 50, sourceId: '/cpu/t', points }
 
 test('curve is flat outside its points and linear between them', () => {
   assert.equal(evaluateCurve(points, 10), 20)
@@ -47,6 +50,27 @@ test('curve output ramps instead of jumping', () => {
   assert.equal(targetDuty(curve, 45, 34), 35)
 })
 
+test('the minimum speed is a floor for fixed and curve modes', () => {
+  assert.equal(targetDuty({ ...curve, minDuty: 40 }, 30, null), 40)
+  assert.equal(targetDuty({ ...curve, mode: 'fixed', fixedDuty: 10, minDuty: 30 }, 50, null), 30)
+})
+
+test('a fan that spins under the BIOS and stops under Streamline is a stall', () => {
+  let state = checkStall(undefined, 1100, null).next
+  let stalled = false
+  for (let tick = 0; tick < STALL_TICKS; tick += 1) ({ next: state, stalled } = checkStall(state, 0, 60))
+  assert.equal(stalled, true)
+  // Never seen spinning (nothing plugged in), no tachometer, or a deliberately low speed: not a stall.
+  assert.equal(checkStall({ seenSpinning: false, zeroTicks: 99 }, 0, 60).stalled, false)
+  assert.equal(checkStall({ seenSpinning: true, zeroTicks: 99 }, null, 60).stalled, false)
+  assert.equal(checkStall({ seenSpinning: true, zeroTicks: 99 }, 0, 10).stalled, false)
+})
+
+test('fans on chips Streamline cannot drive are listed but not controllable', () => {
+  assert.equal(canControl('/lpc/nct6701d/0/control/0'), false)
+  assert.equal(canControl('/lpc/nct6799d/0/control/0'), true)
+})
+
 test('sanitize sorts, rounds and clamps points', () => {
   const config = sanitizeFanConfig({
     mode: 'curve',
@@ -62,6 +86,8 @@ test('sanitize sorts, rounds and clamps points', () => {
     { temp: 70, duty: 100 }
   ])
   assert.equal(config.fixedDuty, 100)
+  assert.equal(config.minDuty, 0)
+  assert.equal(config.name, null)
 })
 
 test('sanitize rejects bad input', () => {
@@ -80,11 +106,14 @@ test('channels and default source come from the snapshot', async () => {
   const backend = new SimulatedBackend()
   const snapshot = { at: 0, hardware: await backend.read() }
   assert.equal(preferredSource(snapshot), '/amdcpu/0/temperature/2')
-  const channels = fanChannels(snapshot, {}, new Map([['/lpc/nct6701d/0/control/0', 55]]))
+  const channels = fanChannels(snapshot, {}, new Map([['/lpc/nct6799d/0/control/0', 55]]))
   // The simulated GPU's fan is not offered: only motherboard headers and coolers are.
   assert.equal(channels.length, 4)
   assert.ok(channels.every((channel) => channel.controlId.startsWith('/lpc/')))
   assert.equal(channels[0].name, 'CPU Fan')
+  const renamed = fanChannels(snapshot, { '/lpc/nct6799d/0/control/2': { ...curve, name: 'AIO fans' } }, new Map())
+  assert.equal(renamed[2].name, 'AIO fans')
+  assert.equal(renamed[2].chipName, 'Chassis Fan')
   assert.equal(channels[0].target, 55)
   assert.equal(channels[0].config.mode, 'bios')
   // Header 2 has no tachometer in the simulator, so it falls back to the control's name.

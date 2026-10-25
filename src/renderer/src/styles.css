@@ -702,3 +702,12 @@ details[open] > .panel__summary {
     grid-template-columns: 1fr;
   }
 }
+.fans__name {
+  font-size: 15px;
+  font-weight: 600;
+  max-width: 280px;
+}
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

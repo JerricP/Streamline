@@ -2,8 +2,9 @@ import type { HardwareReading } from '@shared/types'
 import type { SensorBackend } from './sensors'
 
 /**
- * A fake board with the same shape LibreHardwareMonitor reports for the
- * B850-I, so the UI and fan engine can be developed and tested anywhere.
+ * A fake board shaped like what LibreHardwareMonitor reports for the B850-I,
+ * so the UI and fan engine can be developed and tested anywhere. It reports a
+ * chip Streamline can drive (NCT6799D), so the fan pages are usable.
  * Enabled with STREAMLINE_SIMULATE_SENSORS=1.
  */
 export class SimulatedBackend implements SensorBackend {
@@ -11,10 +12,10 @@ export class SimulatedBackend implements SensorBackend {
   private time = 0
   private readonly extremes = new Map<string, [number, number]>()
   private readonly duty = new Map<string, number | null>([
-    ['/lpc/nct6701d/0/control/0', null],
-    ['/lpc/nct6701d/0/control/1', null],
-    ['/lpc/nct6701d/0/control/2', null],
-    ['/lpc/nct6701d/0/control/3', null]
+    ['/lpc/nct6799d/0/control/0', null],
+    ['/lpc/nct6799d/0/control/1', null],
+    ['/lpc/nct6799d/0/control/2', null],
+    ['/lpc/nct6799d/0/control/3', null]
   ])
 
   private biosDuty(cpuTemp: number): number {
@@ -45,16 +46,16 @@ export class SimulatedBackend implements SensorBackend {
         sensors: []
       },
       {
-        id: '/lpc/nct6701d/0',
-        name: 'ASUS ROG STRIX B850-I GAMING WIFI · Nuvoton NCT6701D',
+        id: '/lpc/nct6799d/0',
+        name: 'ASUS ROG STRIX B850-I GAMING WIFI · Nuvoton NCT6799D',
         type: 'SuperIO',
         sensors: [
-          sensor('/lpc/nct6701d/0/voltage/0', 'Vcore', 'Voltage', 1.21 + 0.02 * wave(5)),
-          sensor('/lpc/nct6701d/0/voltage/1', '+5V', 'Voltage', 5.04),
-          sensor('/lpc/nct6701d/0/voltage/2', '+12V', 'Voltage', 12.1),
-          sensor('/lpc/nct6701d/0/temperature/0', 'Motherboard', 'Temperature', 36 + wave(40)),
-          sensor('/lpc/nct6701d/0/temperature/1', 'CPU', 'Temperature', cpuTemp - 3),
-          sensor('/lpc/nct6701d/0/temperature/2', 'VRM', 'Temperature', 44 + 5 * wave(25)),
+          sensor('/lpc/nct6799d/0/voltage/0', 'Vcore', 'Voltage', 1.21 + 0.02 * wave(5)),
+          sensor('/lpc/nct6799d/0/voltage/1', '+5V', 'Voltage', 5.04),
+          sensor('/lpc/nct6799d/0/voltage/2', '+12V', 'Voltage', 12.1),
+          sensor('/lpc/nct6799d/0/temperature/0', 'Motherboard', 'Temperature', 36 + wave(40)),
+          sensor('/lpc/nct6799d/0/temperature/1', 'CPU', 'Temperature', cpuTemp - 3),
+          sensor('/lpc/nct6799d/0/temperature/2', 'VRM', 'Temperature', 44 + 5 * wave(25)),
           ...controls
             .filter((control) => control.index !== 1)
             .map((control) =>

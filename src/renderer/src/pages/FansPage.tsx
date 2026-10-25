@@ -52,6 +52,9 @@ const PRESETS: Array<{ label: string; points: FanCurvePoint[] }> = [
 /** Below this, many CPU coolers stall or trip the BIOS "CPU fan error". */
 const CPU_FAN_FLOOR = 20
 
+/** AIO pumps run far faster than fans; above this a header probably drives one. */
+const PUMP_RPM = 2500
+
 const sameConfig = (a: FanChannelConfig, b: FanChannelConfig) => JSON.stringify(a) === JSON.stringify(b)
 
 export function FansPage() {
@@ -86,7 +89,7 @@ export function FansPage() {
     try {
       const next = await api.fans.save(channel.controlId, draft)
       setStatus(next)
-      notify(`${channel.name} saved`, 'success')
+      notify(`${draft.name ?? channel.chipName} saved`, 'success')
     } catch (error) {
       notify(errorMessage(error), 'error')
     } finally {
@@ -112,6 +115,7 @@ export function FansPage() {
   const dirty = channel && draft ? !sameConfig(channel.config, draft) : false
   const lowestDuty = draft ? (draft.mode === 'fixed' ? draft.fixedDuty : Math.min(...draft.points.map((point) => point.duty))) : 100
   const cpuFanTooLow = channel && draft && draft.mode !== 'bios' && /cpu/i.test(channel.name) && lowestDuty < CPU_FAN_FLOOR
+  const looksLikePump = channel && draft && draft.mode !== 'bios' && (channel.rpm ?? 0) > PUMP_RPM
   const source = status?.temperatures.find((entry) => entry.id === draft?.sourceId)
 
   return (
@@ -142,7 +146,7 @@ export function FansPage() {
                 <div className="fan-card__top">
                   <span className="fan-card__name">{entry.name}</span>
                   <span className={`badge${entry.config.mode !== 'bios' ? ' badge--accent' : ''}`}>
-                    {MODES.find((mode) => mode.mode === entry.config.mode)?.label}
+                    {entry.stalled ? 'stopped' : MODES.find((mode) => mode.mode === entry.config.mode)?.label}
                   </span>
                 </div>
                 <div className="fan-card__stats">
@@ -159,7 +163,14 @@ export function FansPage() {
           {channel && draft && (
             <section className="panel fans__editor">
               <div className="fans__editor-head">
-                <h2>{channel.name}</h2>
+                <input
+                  className="input fans__name"
+                  aria-label="Fan name"
+                  maxLength={40}
+                  placeholder={channel.chipName}
+                  value={draft.name ?? ''}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value || null })}
+                />
                 <div className="fans__live">
                   {channel.sourceTemp !== null && draft.mode === 'curve' && <span>{channel.sourceTemp.toFixed(1)}°C</span>}
                   <span>{channel.duty === null ? '—' : `${Math.round(channel.duty)}%`}</span>
@@ -167,10 +178,28 @@ export function FansPage() {
                 </div>
               </div>
 
+              <p className="panel__text">
+                On the board as “{channel.chipName}”. Rename it to what's plugged in, e.g. “AIO fans”.
+              </p>
+
+              {!channel.controllable && (
+                <p className="panel__text panel__text--error">
+                  Streamline can read this fan but can't set its speed safely on this board yet: on the ROG Strix B850-I's
+                  fan chip, any speed it set stopped the fan. It stays on the BIOS curve. You can still rename it.
+                </p>
+              )}
+              {channel.stalled && (
+                <p className="panel__text panel__text--error">
+                  This fan stopped spinning when Streamline set its speed, so it was handed back to the BIOS. Save again to
+                  retry.
+                </p>
+              )}
+
               <div className="chip-row">
                 {MODES.map((entry) => (
                   <button
                     key={entry.mode}
+                    disabled={!channel.controllable && entry.mode !== 'bios'}
                     className={`chip${draft.mode === entry.mode ? ' chip--active' : ''}`}
                     onClick={() =>
                       setDraft({
@@ -238,6 +267,29 @@ export function FansPage() {
                     currentDuty={dirty ? null : channel.target}
                   />
                 </>
+              )}
+
+              {draft.mode !== 'bios' && (
+                <div className="field">
+                  <label htmlFor="min-duty">Never slower than: {draft.minDuty}%</label>
+                  <input
+                    id="min-duty"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={draft.minDuty}
+                    className="slider"
+                    onChange={(event) => setDraft({ ...draft, minDuty: Number(event.target.value) })}
+                  />
+                  <span className="field__hint">A floor under the curve or fixed speed. Pumps usually want 100%.</span>
+                </div>
+              )}
+
+              {looksLikePump && (
+                <p className="panel__text panel__text--error">
+                  This header spins at over {PUMP_RPM} RPM, which is typical of an AIO pump. A slow or stopped pump
+                  overheats the CPU quickly; leave it on BIOS or set “Never slower than” high.
+                </p>
               )}
 
               {cpuFanTooLow && (
