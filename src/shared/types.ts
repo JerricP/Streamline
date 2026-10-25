@@ -74,9 +74,11 @@ export interface DriverItem {
 
 export interface DriverReport {
   checkedAt: number
-  /** Board model as reported by SMBIOS, e.g. "ROG STRIX B650E-I GAMING WIFI". */
+  /** Board model as reported by SMBIOS, e.g. "ROG STRIX B850-I GAMING WIFI". */
   board: string
   biosVersion: string | null
   os: string
   items: DriverItem[]
+  /** Why the BIOS list is missing, when it is; drivers are still listed. */
+  biosError: string | null
 }

@@ -14,7 +14,7 @@ Streamline lives in the notification area. There is no main window: clicking
 the tray icon opens the settings page in your browser, served from
 `127.0.0.1`. The tray menu also has quick lighting modes and a driver check.
 
-Target hardware: ASUS ROG Strix B650E-I (Aura USB controller), Windows 10/11.
+Target hardware: ASUS ROG Strix B850-I (Aura USB controller), Windows 10/11.
 
 ## How it works
 
@@ -45,6 +45,9 @@ fan curves (Q-Fan) keep working without it.
 
 - Windows 10/11 on an ASUS board with an Aura USB controller
 - Node.js 22+ and npm to build
+
+If `npm start` says Electron failed to install, run
+`node node_modules/electron/install.js` once to download it.
 
 ## Scripts
 

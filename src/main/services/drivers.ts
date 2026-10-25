@@ -12,7 +12,7 @@ import type { Logger } from './logger'
  * ASUS's public support catalogue what is current for this board.
  */
 
-const SUPPORT_HOSTS = ['https://rog.asus.com', 'https://www.asus.com']
+const ROG_HOST = 'https://rog.asus.com'
 
 /** ASUS support-site OS ids. */
 const OS_WINDOWS_11_64 = { id: '52', label: 'Windows 11 64-bit' }
@@ -102,6 +102,7 @@ export function readInventory(): Promise<SystemInventory> {
 interface CatalogFile {
   Title?: string
   Version?: string
+  IsRelease?: string | number
   ReleaseDate?: string
   FileSize?: string
   DownloadUrl?: { Global?: string } | null
@@ -126,7 +127,7 @@ export interface CatalogEntry {
   downloadUrl: string | null
 }
 
-/** "ROG STRIX B650E-I GAMING WIFI" -> "ROG-STRIX-B650E-I-GAMING-WIFI", the support-site model key. */
+/** "ROG STRIX B850-I GAMING WIFI" -> "ROG-STRIX-B850-I-GAMING-WIFI", the support-site model key. */
 export function modelKey(board: string): string {
   return board.trim().replace(/\s+/g, '-')
 }
@@ -136,22 +137,28 @@ export function currentOs(): { id: string; label: string } {
   return build >= 22000 ? OS_WINDOWS_11_64 : OS_WINDOWS_10_64
 }
 
-/** Flatten a catalogue response, keeping only the newest file per title. */
+/**
+ * Flatten a catalogue response, keeping only the newest released file per
+ * title. BIOS files come with an empty Title, so they share one slot.
+ */
 export function parseCatalog(response: CatalogResponse, fallbackCategory: string): CatalogEntry[] {
   const groups = response.Result?.Obj ?? []
   const newest = new Map<string, CatalogEntry>()
   for (const group of groups) {
+    const category = group.Name?.trim() || fallbackCategory
     for (const file of group.Files ?? []) {
-      if (!file.Title || !file.Version) continue
+      // IsRelease "0" marks beta builds, which ASUS lists but doesn't recommend.
+      if (!file.Version || String(file.IsRelease ?? '1') === '0') continue
+      const rawTitle = (file.Title ?? '').trim()
       const entry: CatalogEntry = {
-        category: group.Name?.trim() || fallbackCategory,
-        title: file.Title.trim(),
+        category,
+        title: rawTitle || `${category} ${file.Version.trim()}`,
         version: file.Version.trim(),
         releaseDate: (file.ReleaseDate ?? '').trim(),
         size: (file.FileSize ?? '').trim(),
         downloadUrl: file.DownloadUrl?.Global?.trim() || null
       }
-      const key = `${entry.category}|${entry.title}`.toLowerCase()
+      const key = `${category}|${rawTitle}`.toLowerCase()
       const existing = newest.get(key)
       if (!existing || compareVersions(entry.version, existing.version) > 0) newest.set(key, entry)
     }
@@ -165,25 +172,43 @@ async function fetchJson(url: string): Promise<CatalogResponse> {
   return (await response.json()) as CatalogResponse
 }
 
-export async function fetchCatalog(board: string, osId: string, logger: Logger): Promise<CatalogEntry[]> {
+/** Driver list for the board and OS, from the ROG support site. */
+function driversUrl(board: string, osId: string): string {
   const model = encodeURIComponent(modelKey(board))
-  let lastError: unknown = null
+  return `${ROG_HOST}/support/webapi/product/GetPDDrivers?website=global&model=${model}&pdid=&cpu=&osid=${osId}`
+}
 
-  for (const host of SUPPORT_HOSTS) {
-    try {
-      const [drivers, bios] = await Promise.all([
-        fetchJson(`${host}/support/webapi/product/GetPDDrivers?website=global&model=${model}&pdid=&cpu=&osid=${osId}`),
-        fetchJson(`${host}/support/webapi/product/GetPDBIOS?website=global&model=${model}&pdid=`)
-      ])
-      const entries = [...parseCatalog(bios, 'BIOS'), ...parseCatalog(drivers, 'Drivers')]
-      if (entries.length > 0) return entries
-      lastError = new Error(`${host} has no downloads listed for ${board}`)
-    } catch (error) {
-      lastError = error
-      logger.warn('drivers', `${host} catalogue failed: ${String(error)}`)
-    }
+/** BIOS list for the board. It answers 404 unless the (empty) `cpu` parameter is present. */
+function biosUrl(board: string): string {
+  const model = encodeURIComponent(modelKey(board))
+  return `${ROG_HOST}/support/webapi/product/GetPDBIOS?website=global&model=${model}&pdid=&cpu=`
+}
+
+export interface Catalog {
+  entries: CatalogEntry[]
+  /** Set when the BIOS list couldn't be loaded; drivers are still reported. */
+  biosError: string | null
+}
+
+export async function fetchCatalog(board: string, osId: string, logger: Logger): Promise<Catalog> {
+  let drivers: CatalogEntry[]
+  try {
+    drivers = parseCatalog(await fetchJson(driversUrl(board, osId)), 'Drivers')
+  } catch (error) {
+    throw new Error(`Could not load the ASUS driver list: ${error instanceof Error ? error.message : String(error)}`)
   }
-  throw new Error(`Could not load the ASUS driver list: ${lastError instanceof Error ? lastError.message : String(lastError)}`)
+  if (drivers.length === 0) throw new Error(`ASUS lists no drivers for ${board}.`)
+
+  // BIOS is optional: a failure here shouldn't hide driver updates.
+  try {
+    const bios = parseCatalog(await fetchJson(biosUrl(board)), 'BIOS')
+    if (bios.length === 0) return { entries: drivers, biosError: 'ASUS returned no BIOS list.' }
+    return { entries: [...bios, ...drivers], biosError: null }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    logger.warn('drivers', `BIOS list failed: ${reason}`)
+    return { entries: drivers, biosError: `Couldn't load the BIOS list (${reason}).` }
+  }
 }
 
 // ---- Comparison -----------------------------------------------------------
@@ -248,7 +273,12 @@ export function statusFor(latest: string, installed: string | null): DriverStatu
   return compareVersions(installed, latest) >= 0 ? 'up-to-date' : 'update-available'
 }
 
-export function buildReport(inventory: SystemInventory, catalog: CatalogEntry[], osLabel: string): DriverReport {
+export function buildReport(
+  inventory: SystemInventory,
+  catalog: CatalogEntry[],
+  osLabel: string,
+  biosError: string | null = null
+): DriverReport {
   const items: DriverItem[] = catalog.map((entry) => {
     const installedVersion = matchInstalled(entry, inventory)
     return {
@@ -271,7 +301,8 @@ export function buildReport(inventory: SystemInventory, catalog: CatalogEntry[],
     board: inventory.board,
     biosVersion: inventory.biosVersion,
     os: osLabel,
-    items
+    items,
+    biosError
   }
 }
 
@@ -282,7 +313,7 @@ export async function checkDrivers(logger: Logger): Promise<DriverReport> {
   }
   const os = currentOs()
   const catalog = await fetchCatalog(inventory.board, os.id, logger)
-  const report = buildReport(inventory, catalog, os.label)
+  const report = buildReport(inventory, catalog.entries, os.label, catalog.biosError)
   const updates = report.items.filter((item) => item.status === 'update-available').length
   logger.info('drivers', `${inventory.board}: ${report.items.length} packages, ${updates} update(s)`)
   return report

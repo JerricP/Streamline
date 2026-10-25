@@ -38,11 +38,31 @@ page shows the controller's firmware string and raw config table to help.
 DriverHub is a web page that drives a privileged local agent over a localhost
 websocket. That design is what made it vulnerable to remote code execution in
 2025 (any site could talk to the agent). Streamline doesn't use the agent; it
-asks ASUS's public support catalogue directly
-(`/support/webapi/product/GetPDDrivers` and `GetPDBIOS`) and reads installed
-versions from Windows.
+asks ASUS's public support catalogue directly and reads installed versions
+from Windows. Checked live on the target PC (2026-10-25):
 
-## Fan control (next)
+| Endpoint | Result |
+| --- | --- |
+| `rog.asus.com/support/webapi/product/GetPDDrivers?website=global&model=<MODEL-DASHED>&pdid=&cpu=&osid=52` | 200; groups LAN, Wireless, Chipset, Audio, VGA Drivers, USB, Bluetooth, Software and Utility, SATA, Utilities |
+| `rog.asus.com/support/webapi/product/GetPDBIOS?website=global&model=<MODEL-DASHED>&pdid=&cpu=` | 200; one `BIOS` group. **404 without `&cpu=`** |
+| `www.asus.com/support/webapi/...` | 404 |
+
+BIOS files have an empty `Title` (the text is in `Description`) and
+`IsRelease: 0` marks betas, which Streamline skips.
+
+The board on the target PC reports itself as **ROG STRIX B850-I GAMING
+WIFI** (Aura controller PID `0x19AF`).
+
+## Creative Pebble Pro (next)
+
+| Item | Observation |
+| --- | --- |
+| USB | VID `0x041E`, PID `0x3287`, release `0x1010` |
+| HID (MI_00) | Col01 usage page `0x01` with no usage (likely the vendor/lighting channel), Col02 consumer control, Col03 telephony |
+| Audio | MI_01, "Creative Pebble Pro" |
+| Creative App | `Creative.Platform.Devices.dll` (.NET), `HidLibrary.dll`, `AirohaHidCoreLib.dll` (Airoha chip) |
+
+## Fan control (later)
 
 Armoury Crate ships `AsusFanControlService` and talks to the board's Nuvoton
 Super I/O chip (`NCTSmbus`, `Global\ASUS_SIO_MUTEX`). That needs kernel-level

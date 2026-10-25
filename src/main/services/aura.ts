@@ -6,7 +6,7 @@ import type { Logger } from './logger'
 
 /**
  * Talks to the ASUS Aura USB lighting controller found on recent ASUS
- * mainboards (the ROG Strix B650E-I among them), so lighting works without
+ * mainboards (the ROG Strix B850-I among them, PID 0x19AF), so lighting works without
  * Armoury Crate.
  *
  * Armoury Crate drives this controller from its MB HAL

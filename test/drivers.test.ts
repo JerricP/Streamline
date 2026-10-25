@@ -3,15 +3,17 @@ import { test } from 'node:test'
 import {
   buildReport,
   compareVersions,
+  fetchCatalog,
   matchInstalled,
   modelKey,
   parseCatalog
 } from '../src/main/services/drivers.ts'
 import type { CatalogEntry, SystemInventory } from '../src/main/services/drivers.ts'
+import type { Logger } from '../src/main/services/logger.ts'
 
 const inventory: SystemInventory = {
   boardManufacturer: 'ASUSTeK COMPUTER INC.',
-  board: 'ROG STRIX B650E-I GAMING WIFI',
+  board: 'ROG STRIX B850-I GAMING WIFI',
   biosVersion: '3040',
   entries: [
     { name: 'Advanced Micro Devices, Inc. AMD Chipset Software', version: '6.10.17.152' },
@@ -31,7 +33,7 @@ const entry = (category: string, title: string, version: string): CatalogEntry =
 })
 
 test('model key matches the support-site format', () => {
-  assert.equal(modelKey(' ROG STRIX B650E-I GAMING WIFI '), 'ROG-STRIX-B650E-I-GAMING-WIFI')
+  assert.equal(modelKey(' ROG STRIX B850-I GAMING WIFI '), 'ROG-STRIX-B850-I-GAMING-WIFI')
 })
 
 test('version compare ignores prefixes and padding', () => {
@@ -62,8 +64,33 @@ test('catalogue keeps the newest file per title', () => {
   assert.equal(entries[0].downloadUrl, 'https://b')
 })
 
+test('BIOS files have no title; the newest released one wins and betas are skipped', () => {
+  const entries = parseCatalog(
+    {
+      Result: {
+        Obj: [
+          {
+            Name: 'BIOS',
+            Files: [
+              { Title: '', Version: '1805', IsRelease: '1' },
+              { Title: '', Version: '1686', IsRelease: '0' },
+              { Title: '', Version: '1900', IsRelease: '0' },
+              { Title: '', Version: '0401', IsRelease: '1' }
+            ]
+          }
+        ]
+      }
+    },
+    'BIOS'
+  )
+  assert.deepEqual(
+    entries.map((entry) => [entry.title, entry.version]),
+    [['BIOS 1805', '1805']]
+  )
+})
+
 test('BIOS compares against the SMBIOS version', () => {
-  assert.equal(matchInstalled(entry('BIOS', 'ROG STRIX B650E-I GAMING WIFI BIOS 3222', '3222'), inventory), '3040')
+  assert.equal(matchInstalled(entry('BIOS', 'ROG STRIX B850-I GAMING WIFI BIOS 3222', '3222'), inventory), '3040')
 })
 
 test('drivers match by vendor and kind', () => {
@@ -89,4 +116,28 @@ test('report puts updates first', () => {
     report.items.map((item) => item.status),
     ['update-available', 'unknown', 'up-to-date']
   )
+})
+
+test('a missing BIOS list still returns the drivers', async () => {
+  const logger = { info: () => undefined, warn: () => undefined, error: () => undefined } as unknown as Logger
+  const original = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input)
+    if (url.includes('GetPDDrivers')) {
+      return new Response(
+        JSON.stringify({ Result: { Obj: [{ Name: 'LAN', Files: [{ Title: 'Intel LAN Driver', Version: '2.1.5.7' }] }] } })
+      )
+    }
+    return new Response('Not found', { status: 404 })
+  }) as typeof fetch
+  try {
+    const catalog = await fetchCatalog('ROG STRIX B850-I GAMING WIFI', '52', logger)
+    assert.deepEqual(
+      catalog.entries.map((item) => item.title),
+      ['Intel LAN Driver']
+    )
+    assert.match(catalog.biosError ?? '', /HTTP 404/)
+  } finally {
+    globalThis.fetch = original
+  }
 })

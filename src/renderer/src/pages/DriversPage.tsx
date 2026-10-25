@@ -80,6 +80,13 @@ export function DriversPage() {
             </div>
           </section>
 
+          {report.biosError && (
+            <section className="panel notice">
+              <strong>BIOS updates couldn't be checked.</strong> {report.biosError} Driver results below are
+              still current. Check the BIOS on ASUS's support page for now.
+            </section>
+          )}
+
           <section className="panel">
             <h2>Downloads</h2>
             {report.items.map((item) => (
