@@ -96,5 +96,16 @@ temperature can't be read, or reads 95 °C or more, runs at 100%; changes ramp
 (+8%/s, -3%/s) so short CPU spikes don't rev fans; anything that takes a fan
 back from Streamline (e.g. Armoury Crate) is overridden on the next tick.
 
-**Still to verify on the real board:** PawnIO install state, which headers
+Only motherboard headers and coolers are offered on the Fans page. LHM can
+also drive graphics card fans through the GPU driver, but that would override
+the card's zero-RPM idle mode, and Armoury Crate never did it.
+
+Checked on the target PC (2026-10-25), helper run **without** admin or PawnIO:
+it loads cleanly under PowerShell 5.1.26100, a full read takes ~100-170 ms,
+and closing the pipe ends it. It saw the Ryzen 7 9800X3D (Tctl/Tdie reading 0
+without driver access), the RTX 5080 and the Radeon iGPU, but no Super I/O
+chip and no drives, as expected without PawnIO and admin. PawnIO was not
+installed and `AsusFanControlService` was running.
+
+**Still to verify on the real board:** with PawnIO and admin, which headers
 LHM names, and that RPM follows duty on each header.

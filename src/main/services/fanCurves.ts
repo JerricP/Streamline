@@ -23,6 +23,13 @@ export const PANIC_TEMP = 95
 export const RAMP_UP_PER_TICK = 8
 export const RAMP_DOWN_PER_TICK = 3
 
+/**
+ * Hardware whose fans Streamline offers to control: motherboard headers and
+ * coolers. Graphics card fans are left to the driver, which also handles
+ * their zero-RPM idle mode.
+ */
+export const CONTROLLABLE_HARDWARE = ['SuperIO', 'EmbeddedController', 'Cooler']
+
 export const DEFAULT_POINTS: FanCurvePoint[] = [
   { temp: 30, duty: 30 },
   { temp: 50, duty: 40 },
@@ -85,7 +92,8 @@ export function evaluateCurve(points: FanCurvePoint[], temp: number): number {
 export function targetDuty(config: FanChannelConfig, sourceTemp: number | null, previous: number | null): number | null {
   if (config.mode === 'bios') return null
   if (config.mode === 'fixed') return config.fixedDuty
-  if (sourceTemp === null || !Number.isFinite(sourceTemp) || sourceTemp >= PANIC_TEMP) return 100
+  // 0 °C or below is a sensor that isn't really being read (e.g. without driver access), not a cold PC.
+  if (sourceTemp === null || !Number.isFinite(sourceTemp) || sourceTemp <= 0 || sourceTemp >= PANIC_TEMP) return 100
   const wanted = Math.round(evaluateCurve(config.points, sourceTemp))
   if (previous === null) return wanted
   if (wanted > previous) return Math.min(wanted, previous + RAMP_UP_PER_TICK)
@@ -140,23 +148,25 @@ export function fanChannels(
 ): FanChannel[] {
   if (!snapshot) return []
   const fallbackSource = preferredSource(snapshot)
-  return snapshot.hardware.flatMap((hardware) =>
-    hardware.sensors
-      .filter((sensor) => sensor.type === 'Control')
-      .map((control) => {
-        const fan = hardware.sensors.find((sensor) => sensor.id === fanIdForControl(control.id)) ?? null
-        const config = configs[control.id] ?? defaultConfig(fallbackSource)
-        const source = findSensor(snapshot, config.sourceId)
-        return {
-          controlId: control.id,
-          fanId: fan?.id ?? null,
-          name: fan?.name ?? control.name,
-          rpm: fan?.value ?? null,
-          duty: control.value,
-          target: targets.get(control.id) ?? null,
-          sourceTemp: source?.value ?? null,
-          config
-        }
-      })
-  )
+  return snapshot.hardware
+    .filter((hardware) => CONTROLLABLE_HARDWARE.includes(hardware.type))
+    .flatMap((hardware) =>
+      hardware.sensors
+        .filter((sensor) => sensor.type === 'Control')
+        .map((control) => {
+          const fan = hardware.sensors.find((sensor) => sensor.id === fanIdForControl(control.id)) ?? null
+          const config = configs[control.id] ?? defaultConfig(fallbackSource)
+          const source = findSensor(snapshot, config.sourceId)
+          return {
+            controlId: control.id,
+            fanId: fan?.id ?? null,
+            name: fan?.name ?? control.name,
+            rpm: fan?.value ?? null,
+            duty: control.value,
+            target: targets.get(control.id) ?? null,
+            sourceTemp: source?.value ?? null,
+            config
+          }
+        })
+    )
 }

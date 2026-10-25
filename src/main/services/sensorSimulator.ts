@@ -91,6 +91,7 @@ export class SimulatedBackend implements SensorBackend {
           sensor('/gpu-nvidia/0/temperature/2', 'GPU Hot Spot', 'Temperature', gpuTemp + 9),
           sensor('/gpu-nvidia/0/load/0', 'GPU Core', 'Load', Math.max(0, 20 + 20 * wave(35, 4))),
           sensor('/gpu-nvidia/0/fan/1', 'GPU Fan 1', 'Fan', gpuTemp > 50 ? 1100 : 0),
+          sensor('/gpu-nvidia/0/control/1', 'GPU Fan 1', 'Control', gpuTemp > 50 ? 35 : 0),
           sensor('/gpu-nvidia/0/power/0', 'GPU Package', 'Power', 45 + 30 * wave(35, 4))
         ]
       },

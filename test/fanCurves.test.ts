@@ -37,6 +37,7 @@ test('a curve whose temperature is missing or too hot runs at 100%', () => {
   assert.equal(targetDuty(curve, null, 30), 100)
   assert.equal(targetDuty(curve, Number.NaN, 30), 100)
   assert.equal(targetDuty(curve, PANIC_TEMP, 30), 100)
+  assert.equal(targetDuty(curve, 0, 30), 100)
 })
 
 test('curve output ramps instead of jumping', () => {
@@ -80,7 +81,9 @@ test('channels and default source come from the snapshot', async () => {
   const snapshot = { at: 0, hardware: await backend.read() }
   assert.equal(preferredSource(snapshot), '/amdcpu/0/temperature/2')
   const channels = fanChannels(snapshot, {}, new Map([['/lpc/nct6701d/0/control/0', 55]]))
+  // The simulated GPU's fan is not offered: only motherboard headers and coolers are.
   assert.equal(channels.length, 4)
+  assert.ok(channels.every((channel) => channel.controlId.startsWith('/lpc/')))
   assert.equal(channels[0].name, 'CPU Fan')
   assert.equal(channels[0].target, 55)
   assert.equal(channels[0].config.mode, 'bios')
