@@ -20,6 +20,12 @@ const OS_WINDOWS_10_64 = { id: '45', label: 'Windows 10 64-bit' }
 
 const KNOWN_VENDORS = ['amd', 'intel', 'realtek', 'mediatek', 'nvidia', 'qualcomm', 'asmedia', 'marvell']
 
+/** Other spellings vendors use in driver names and catalogue titles. */
+const VENDOR_ALIASES: Array<[RegExp, string]> = [
+  [/advanced micro devices/gi, 'amd'],
+  [/\bmtk\b/gi, 'mediatek']
+]
+
 /** Words that tell an installed driver's kind apart; matched against both sides. */
 const KIND_KEYWORDS: Record<string, RegExp> = {
   chipset: /chipset/i,
@@ -28,7 +34,8 @@ const KIND_KEYWORDS: Record<string, RegExp> = {
   wireless: /wi-?fi|wireless|wlan|802\.11/i,
   bluetooth: /bluetooth/i,
   raid: /raid/i,
-  graphics: /graphics|vga|display/i
+  graphics: /graphics|vga|display/i,
+  npu: /\bnpu\b|\bipu\b|ryzen ai/i
 }
 
 // ---- Installed inventory --------------------------------------------------
@@ -138,6 +145,28 @@ export function currentOs(): { id: string; label: string } {
 }
 
 /**
+ * What a package is, without its version and OS suffix, so re-uploads and
+ * renamed copies collapse: "MTK Bluetooth V1.1038.0.442 for Windows 11
+ * 64-bit.(WHQL)" and "Bluetooth driver v1.1038.0.442 for Windows 11 64-bit."
+ * both become "bluetooth".
+ */
+export function packageName(title: string): string {
+  return normalizeVendors(title)
+    .replace(/\bfor windows.*$/, '')
+    .replace(/\(whql\)/g, '')
+    .replace(/\bv?\d+(\.\d+)+\b/g, '')
+    .replace(/\b(driver|drivers|mediatek|realtek|intel|amd|software|package)\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/** Newer by release date; version only breaks ties, since schemes differ between uploads. */
+function isNewer(candidate: CatalogEntry, existing: CatalogEntry): boolean {
+  const byDate = candidate.releaseDate.localeCompare(existing.releaseDate)
+  return byDate !== 0 ? byDate > 0 : compareVersions(candidate.version, existing.version) > 0
+}
+
+/**
  * Flatten a catalogue response, keeping only the newest released file per
  * title. BIOS files come with an empty Title, so they share one slot.
  */
@@ -158,9 +187,9 @@ export function parseCatalog(response: CatalogResponse, fallbackCategory: string
         size: (file.FileSize ?? '').trim(),
         downloadUrl: file.DownloadUrl?.Global?.trim() || null
       }
-      const key = `${category}|${rawTitle}`.toLowerCase()
+      const key = `${category}|${packageName(rawTitle)}`
       const existing = newest.get(key)
-      if (!existing || compareVersions(entry.version, existing.version) > 0) newest.set(key, entry)
+      if (!existing || isNewer(entry, existing)) newest.set(key, entry)
     }
   }
   return [...newest.values()]
@@ -234,8 +263,12 @@ function kindsOf(text: string): string[] {
     .map(([kind]) => kind)
 }
 
+function normalizeVendors(text: string): string {
+  return VENDOR_ALIASES.reduce((value, [pattern, vendor]) => value.replace(pattern, vendor), text.toLowerCase())
+}
+
 function vendorsOf(text: string): string[] {
-  const lower = text.toLowerCase()
+  const lower = normalizeVendors(text)
   return KNOWN_VENDORS.filter((vendor) => lower.includes(vendor))
 }
 
@@ -246,10 +279,12 @@ function vendorsOf(text: string): string[] {
 export function matchInstalled(entry: CatalogEntry, inventory: SystemInventory): string | null {
   if (/bios/i.test(entry.category)) return inventory.biosVersion
 
-  const subject = `${entry.category} ${entry.title}`
-  const vendors = vendorsOf(subject)
-  const kinds = kindsOf(subject)
-  const sharesVendor = (name: string) => vendors.some((vendor) => name.toLowerCase().includes(vendor))
+  // The title says what the package is; ASUS's category is broad (NPU drivers
+  // sit under "Chipset"), so it only decides the kind when the title can't.
+  const vendors = vendorsOf(`${entry.category} ${entry.title}`)
+  const titleKinds = kindsOf(entry.title)
+  const kinds = titleKinds.length > 0 ? titleKinds : kindsOf(entry.category)
+  const sharesVendor = (name: string) => vendors.some((vendor) => normalizeVendors(name).includes(vendor))
   const sharesKind = (name: string) => kinds.some((kind) => KIND_KEYWORDS[kind].test(name))
 
   // Short versions like "1.0.0" collide across unrelated software, so an exact

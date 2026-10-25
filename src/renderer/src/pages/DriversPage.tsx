@@ -5,12 +5,37 @@ import { useApp } from '../state/AppState'
 
 const STATUS_LABEL: Record<DriverStatus, string> = {
   'update-available': 'Update available',
-  unknown: 'Not detected',
+  unknown: 'Not found',
   'up-to-date': 'Up to date'
 }
 
 function formatCheckedAt(timestamp: number): string {
   return new Date(timestamp).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function DriverRow({ item, onDownload }: { item: DriverItem; onDownload: (item: DriverItem) => void }) {
+  return (
+    <div className="row">
+      <div className="row__main">
+        <div className="row__title">
+          {item.title} <span className={`badge status--${item.status}`}>{STATUS_LABEL[item.status]}</span>
+        </div>
+        <div className="row__sub">
+          {item.category} · latest {item.latestVersion}
+          {item.installedVersion ? ` · installed ${item.installedVersion}` : ''}
+          {item.releaseDate ? ` · ${item.releaseDate}` : ''}
+          {item.size ? ` · ${item.size}` : ''}
+        </div>
+      </div>
+      <div className="row__actions">
+        {item.downloadUrl && item.status !== 'up-to-date' && (
+          <button className="button" onClick={() => onDownload(item)}>
+            Download
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export function DriversPage() {
@@ -44,6 +69,8 @@ export function DriversPage() {
   }
 
   const updates = report?.items.filter((item) => item.status === 'update-available').length ?? 0
+  const installed = report?.items.filter((item) => item.status !== 'unknown') ?? []
+  const notFound = report?.items.filter((item) => item.status === 'unknown') ?? []
 
   return (
     <>
@@ -88,32 +115,25 @@ export function DriversPage() {
           )}
 
           <section className="panel">
-            <h2>Downloads</h2>
-            {report.items.map((item) => (
-              <div className="row" key={`${item.category}|${item.title}`}>
-                <div className="row__main">
-                  <div className="row__title">
-                    {item.title} <span className={`badge status--${item.status}`}>{STATUS_LABEL[item.status]}</span>
-                  </div>
-                  <div className="row__sub">
-                    {item.category} · latest {item.latestVersion}
-                    {item.installedVersion ? ` · installed ${item.installedVersion}` : ''}
-                    {item.releaseDate ? ` · ${item.releaseDate}` : ''}
-                    {item.size ? ` · ${item.size}` : ''}
-                  </div>
-                </div>
-                <div className="row__actions">
-                  {item.downloadUrl && item.status !== 'up-to-date' && (
-                    <button className="button" onClick={() => download(item)}>
-                      Download
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+            <h2>On this PC</h2>
+            {installed.length === 0 ? (
+              <p className="row__sub">None of ASUS's packages matched an installed driver.</p>
+            ) : (
+              installed.map((item) => <DriverRow key={`${item.category}|${item.title}`} item={item} onDownload={download} />)
+            )}
           </section>
+
+          {notFound.length > 0 && (
+            <details className="panel">
+              <summary className="panel__summary">Not found on this PC ({notFound.length})</summary>
+              {notFound.map((item) => (
+                <DriverRow key={`${item.category}|${item.title}`} item={item} onDownload={download} />
+              ))}
+            </details>
+          )}
           <p style={{ color: 'var(--text-faint)', fontSize: 12 }}>
-            “Not detected” means Streamline couldn't match the package to anything installed. Installers open in your
+            “Not found” means ASUS lists the package for your board but Streamline couldn't match it to anything
+            installed, often because that hardware or optional software isn't on this PC. Installers open in your
             browser; Streamline never runs them for you.
           </p>
         </>

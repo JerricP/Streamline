@@ -255,6 +255,16 @@ textarea {
   font-size: 15px;
 }
 
+.panel__summary {
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+details[open] > .panel__summary {
+  margin-bottom: 12px;
+}
+
 .row {
   display: flex;
   align-items: center;

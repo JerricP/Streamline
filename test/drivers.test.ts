@@ -6,6 +6,7 @@ import {
   fetchCatalog,
   matchInstalled,
   modelKey,
+  packageName,
   parseCatalog
 } from '../src/main/services/drivers.ts'
 import type { CatalogEntry, SystemInventory } from '../src/main/services/drivers.ts'
@@ -96,6 +97,38 @@ test('BIOS compares against the SMBIOS version', () => {
 test('drivers match by vendor and kind', () => {
   assert.equal(matchInstalled(entry('Chipset', 'AMD Chipset Driver', '7.01.08.129'), inventory), '6.10.17.152')
   assert.equal(matchInstalled(entry('LAN', 'Intel LAN Driver', '2.1.4.3'), inventory), '2.1.4.3')
+})
+
+test('an NPU package is not matched to the chipset software', () => {
+  assert.equal(matchInstalled(entry('Chipset', 'AMD NPU Driver', '32.0.203.240'), inventory), null)
+  assert.equal(matchInstalled(entry('Chipset', 'AMD Ryzen AI Software', '1.4.0'), inventory), null)
+})
+
+test('package names ignore vendor spellings and versions', () => {
+  assert.equal(packageName('MTK Bluetooth Driver'), packageName('MediaTek Bluetooth Driver V1.1037.0.395'))
+  assert.equal(packageName('Advanced Micro Devices Chipset Driver'), packageName('AMD Chipset Driver (WHQL)'))
+  assert.notEqual(packageName('AMD NPU Driver'), packageName('AMD Chipset Driver'))
+})
+
+test('near-duplicate packages collapse to the newest release', () => {
+  const entries = parseCatalog(
+    {
+      Result: {
+        Obj: [
+          {
+            Name: 'Bluetooth',
+            Files: [
+              { Title: 'MTK Bluetooth Driver', Version: '1.1037.0.395', ReleaseDate: '2025/03/01' },
+              { Title: 'MediaTek Bluetooth Driver', Version: '1.1040.0.410', ReleaseDate: '2026/02/10' }
+            ]
+          }
+        ]
+      }
+    },
+    'Drivers'
+  )
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].version, '1.1040.0.410')
 })
 
 test('an unrelated program with the same version is not a match', () => {
