@@ -34,8 +34,10 @@ export const CONTROLLABLE_HARDWARE = ['SuperIO', 'EmbeddedController', 'Cooler']
 /**
  * Controls whose duty LibreHardwareMonitorLib 0.9.6 can't set correctly. On
  * the ROG Strix B850-I (NCT6701D) any duty it set, even 100%, stopped the AIO
- * radiator fans (tested 2026-10-25): it switches the header to manual PWM but
- * leaves the chip's DC curve, which is all zeros, powering the fan.
+ * radiator fans (tested 2026-10-25, with Armoury Crate's AsusFanControlService
+ * running). FanControl drives the same header with the same LHM calls, so the
+ * service, not LHM, is the likely cause (docs/RESEARCH.md); kept off until a
+ * live test without the service confirms it.
  */
 const NO_DUTY_CONTROLS = [/^\/lpc\/nct6701d\//]
 

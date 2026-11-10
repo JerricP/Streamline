@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { inflateRawSync } from 'node:zlib'
 
 const ROOT_PACKAGE = 'LibreHardwareMonitorLib'
-const ROOT_VERSION = '0.9.6'
+const ROOT_VERSION = '0.9.7-pre782'
 
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'resources', 'lhm')
 const STAMP = join(OUT_DIR, 'VERSION')

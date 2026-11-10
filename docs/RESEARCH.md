@@ -130,6 +130,23 @@ dump matched Armoury Crate's saved curves exactly. LHM's manual mode
 (0x02 = 0) leaves the dual-mode engine on with those zero DC points, which
 fits the fans losing power while the duty register reads 51% or 100%.
 
+**FanControl comparison (2026-11-10).** FanControl (Rem0o, V285) does control
+this board's AIO fans, so its release was taken apart. It is closed source but
+does nothing special for this chip: it ships `LibreHardwareMonitorLib.dll`
+built from upstream LHM commit `f48e847` (labelled 0.9.6), uses PawnIO (it
+bundles `PawnIO_setup.exe`), and only calls LHM's `Control.SetSoftware()` and
+`SetDefault()`, the same calls Streamline's helper made. Its `Nct677X` code is
+byte-for-byte the same size as NuGet `0.9.7-pre782` and, for the NCT6701D,
+writes exactly what 0.9.6 did (0x102 <- 0, duty to 0x109); the only NCT6701D
+changes since 0.9.6 are temperature decoding. So LHM's manual duty is not
+broken on this chip by itself. The difference is most likely the environment:
+when Streamline was tested, `AsusFanControlService` was running, keeping the
+dual-mode engine on (0x1C = 0x82) and re-applying Armoury Crate's settings.
+To confirm on the PC: read bank 1 registers 0x02, 0x1C and 0x09 (read only)
+while FanControl holds the Chassis Fan at a fixed speed, and check whether
+`AsusFanControlService` still exists. Streamline now fetches LHM
+0.9.7-pre782 to match FanControl's build.
+
 So Streamline now drives NCT6701D headers the same way ("chip curves"): the
 helper writes the 10 points through LHM's own `Nct677X.ReadByte/WriteByte`
 (reflection) under the ISA bus and `Global\ASUS_SIO_MUTEX` locks, refusing
