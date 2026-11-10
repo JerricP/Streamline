@@ -32,14 +32,14 @@ export const RAMP_DOWN_PER_TICK = 3
 export const CONTROLLABLE_HARDWARE = ['SuperIO', 'EmbeddedController', 'Cooler']
 
 /**
- * Controls whose duty LibreHardwareMonitorLib 0.9.6 can't set correctly. On
- * the ROG Strix B850-I (NCT6701D) any duty it set, even 100%, stopped the AIO
- * radiator fans (tested 2026-10-25, with Armoury Crate's AsusFanControlService
- * running). FanControl drives the same header with the same LHM calls, so the
- * service, not LHM, is the likely cause (docs/RESEARCH.md); kept off until a
- * live test without the service confirms it.
+ * NCT6701D (ROG Strix B850-I) headers Streamline must not drive by duty. With
+ * Armoury Crate's AsusFanControlService running, any duty LibreHardwareMonitor
+ * set stopped the fans (2026-10-25). FanControl drives the Chassis Fan header
+ * (control/0) with the same LHM calls once that service is gone, so only that
+ * header is enabled; the rest, including CPU_FAN (the AIO pump on this PC),
+ * stay read-only until they are tested one by one.
  */
-const NO_DUTY_CONTROLS = [/^\/lpc\/nct6701d\//]
+const NO_DUTY_CONTROLS = [/^\/lpc\/nct6701d\/\d+\/control\/(?!0$)/]
 
 /** Streamline can drive this fan by setting its duty every second. */
 export function canSetDuty(controlId: string): boolean {
@@ -47,14 +47,12 @@ export function canSetDuty(controlId: string): boolean {
 }
 
 /**
- * NCT6701D headers that are driven the way Armoury Crate does it: by writing
- * the chip's own 10-point curve, which it then runs by itself. Only headers
- * whose register bank was verified on the B850-I are listed (the helper keeps
- * the same list); the rest stay read-only. CPU_FAN (control/1, bank 2) is
- * left out until chip curves are proven on the chassis header, because on
- * this PC it drives the AIO pump.
+ * Headers driven the way Armoury Crate did it: by writing the chip's own
+ * 10-point curve. Not used at the moment: the first live write on the B850-I
+ * was followed by the helper exiting, and plain duty (FanControl's way) is
+ * simpler. The code stays for chips where duty can't work.
  */
-const CHIP_CURVE_CONTROLS = ['/lpc/nct6701d/0/control/0']
+const CHIP_CURVE_CONTROLS: string[] = []
 
 export function usesChipCurve(controlId: string): boolean {
   return CHIP_CURVE_CONTROLS.includes(controlId)

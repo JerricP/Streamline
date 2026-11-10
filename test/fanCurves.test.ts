@@ -71,13 +71,13 @@ test('a fan that spins under the BIOS and stops under Streamline is a stall', ()
   assert.equal(checkStall({ seenSpinning: true, zeroTicks: 99 }, 0, 10).stalled, false)
 })
 
-test('NCT6701D headers are driven by chip curve, never by duty, and only the verified ones', () => {
-  assert.equal(canSetDuty('/lpc/nct6701d/0/control/0'), false)
-  assert.equal(usesChipCurve('/lpc/nct6701d/0/control/0'), true)
+test('on the NCT6701D only the chassis header is driven, by duty', () => {
+  assert.equal(canSetDuty('/lpc/nct6701d/0/control/0'), true)
+  assert.equal(usesChipCurve('/lpc/nct6701d/0/control/0'), false)
   assert.equal(canControl('/lpc/nct6701d/0/control/0'), true)
   assert.equal(canControl('/lpc/nct6701d/0/control/1'), false)
+  assert.equal(canControl('/lpc/nct6701d/0/control/5'), false)
   assert.equal(canSetDuty('/lpc/nct6799d/0/control/0'), true)
-  assert.equal(usesChipCurve('/lpc/nct6799d/0/control/0'), false)
 })
 
 test('chip curves have 10 rising points, a 0 °C start and a 100% panic point', () => {
