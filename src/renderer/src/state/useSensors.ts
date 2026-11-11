@@ -6,6 +6,12 @@ import { useApp } from './AppState'
 
 const HISTORY = 90
 
+/** One reading in a sensor's short history; `time` is in Unix seconds, as Liveline expects. */
+export interface SensorPoint {
+  time: number
+  value: number
+}
+
 /**
  * Live sensor readings for the workspace, polled once a second, with a short
  * history per sensor for the sparklines. Same calls the old Overview page made.
@@ -13,16 +19,17 @@ const HISTORY = 90
 export function useSensors() {
   const { notify } = useApp()
   const [status, setStatus] = useState<SensorsStatus | null>(null)
-  const history = useRef(new Map<string, number[]>())
+  const history = useRef(new Map<string, SensorPoint[]>())
 
   const refresh = useCallback(async () => {
     try {
       const next = await api.sensors.status()
+      const now = Date.now() / 1000
       for (const hw of next.snapshot?.hardware ?? []) {
         for (const sensor of hw.sensors) {
           if (sensor.value === null) continue
           const list = history.current.get(sensor.id) ?? []
-          list.push(sensor.value)
+          list.push({ time: now, value: sensor.value })
           if (list.length > HISTORY) list.shift()
           history.current.set(sensor.id, list)
         }

@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { useCallback, useEffect, useState } from 'react'
 import type { DriverReport } from '@shared/types'
 import { Icon } from './components/Icon'
@@ -69,7 +70,7 @@ export function App() {
           </nav>
 
           <div className="topbar__status">
-            <span className={`pill${monitoring ? ' pill--live' : ''}`} title="Hardware monitoring">
+            <span className={clsx('pill', monitoring && 'pill--live')} title="Hardware monitoring">
               <span className="pill__dot" aria-hidden />
               {monitoring ? 'Monitoring' : 'Monitoring off'}
             </span>

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { LightingMode, LightingState, LightingStatus } from '@shared/types'
+import clsx from 'clsx'
 import { Icon } from '../components/Icon'
+import { Segmented } from '../components/Segmented'
 import { Toggle } from '../components/Toggle'
 import { api, errorMessage } from '../lib/api'
 import { useApp } from '../state/AppState'
@@ -95,7 +97,7 @@ export function LightingSection() {
         ) : (
           <>
             <div className="preview" style={{ ['--glow' as string]: usesColor ? draft.color : undefined }}>
-              <span className={`preview__orb preview__orb--${draft.mode}`} />
+              <span className={clsx('preview__orb', `preview__orb--${draft.mode}`)} />
               <div>
                 <div className="preview__mode">{MODES.find((entry) => entry.mode === draft.mode)?.label}</div>
                 <div className="preview__sub">{usesColor ? draft.color.toUpperCase() : 'Aura motherboard'}</div>
@@ -103,20 +105,14 @@ export function LightingSection() {
             </div>
 
             <div className="field">
-              <label>Effect</label>
-              <div className="segmented segmented--wrap" role="radiogroup" aria-label="Lighting effect">
-                {MODES.map((entry) => (
-                  <button
-                    key={entry.mode}
-                    role="radio"
-                    aria-checked={draft.mode === entry.mode}
-                    className={`segmented__item${draft.mode === entry.mode ? ' segmented__item--active' : ''}`}
-                    onClick={() => setDraft({ ...draft, mode: entry.mode })}
-                  >
-                    {entry.label}
-                  </button>
-                ))}
-              </div>
+              <span className="field__label">Effect</span>
+              <Segmented
+                wrap
+                label="Lighting effect"
+                value={draft.mode}
+                options={MODES.map((entry) => ({ value: entry.mode, label: entry.label }))}
+                onChange={(mode) => setDraft({ ...draft, mode })}
+              />
             </div>
 
             {usesColor && (
@@ -126,7 +122,7 @@ export function LightingSection() {
                   {SWATCHES.map((swatch) => (
                     <button
                       key={swatch}
-                      className={`swatch${draft.color === swatch ? ' swatch--active' : ''}`}
+                      className={clsx('swatch', draft.color === swatch && 'swatch--active')}
                       style={{ background: swatch }}
                       aria-label={swatch}
                       onClick={() => setDraft({ ...draft, color: swatch })}

@@ -1,9 +1,12 @@
+import NumberFlow from '@number-flow/react'
+import { Liveline } from 'liveline'
 import { useState } from 'react'
 import type { HardwareReading } from '@shared/types'
 import { Icon } from '../components/Icon'
 import { MonitorNotices, MonitorOff } from '../components/Monitor'
 import { TYPE_LABELS, formatValue, groupByType } from '../lib/sensors'
-import type { SensorsState } from '../state/useSensors'
+import { useApp } from '../state/AppState'
+import type { SensorPoint, SensorsState } from '../state/useSensors'
 
 interface Highlight {
   key: string
@@ -41,18 +44,50 @@ function highlights(hardware: HardwareReading[]): Highlight[] {
   return result
 }
 
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return <svg className="spark" viewBox="0 0 100 28" />
-  const low = Math.min(...values)
-  const high = Math.max(...values)
-  const span = high - low || 1
-  const points = values
-    .map((value, index) => `${(index / (values.length - 1)) * 100},${26 - ((value - low) / span) * 24}`)
-    .join(' ')
+const VITAL_FORMATS: Record<string, { digits: number; suffix: string }> = {
+  Temperature: { digits: 1, suffix: '°C' },
+  Load: { digits: 1, suffix: '%' },
+  Fan: { digits: 0, suffix: ' RPM' }
+}
+
+/** A live number whose digits roll to the new value (NumberFlow) instead of jumping. */
+function VitalValue({ type, value }: { type: string; value: number | null }) {
+  const format = VITAL_FORMATS[type]
+  if (value === null || !format) return <>{formatValue(type, value)}</>
   return (
-    <svg className="spark" viewBox="0 0 100 28" preserveAspectRatio="none">
-      <polyline points={points} />
-    </svg>
+    <NumberFlow
+      value={value}
+      suffix={format.suffix}
+      format={{ minimumFractionDigits: format.digits, maximumFractionDigits: format.digits, useGrouping: false }}
+    />
+  )
+}
+
+/** A bare streaming line for one sensor (Liveline), with the axes, badge and scrubbing turned off. */
+function Sparkline({ points, type }: { points: SensorPoint[]; type: string }) {
+  const { settings } = useApp()
+  const last = points[points.length - 1]
+  if (!last) return <div className="spark" />
+  return (
+    <div className="spark" aria-hidden>
+      <Liveline
+        data={points}
+        value={last.value}
+        color={settings?.accent ?? '#7c5cff'}
+        theme={document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'}
+        window={45}
+        grid={false}
+        badge={false}
+        scrub={false}
+        momentum={false}
+        pulse={false}
+        exaggerate
+        lineWidth={1.5}
+        padding={{ top: 4, right: 6, bottom: 2, left: 0 }}
+        formatValue={(next) => formatValue(type, next)}
+        cursor="default"
+      />
+    </div>
   )
 }
 
@@ -81,8 +116,10 @@ export function Vitals({ sensors }: { sensors: SensorsState }) {
         {highlights(status?.snapshot?.hardware ?? []).map((tile) => (
           <div className="vital" key={tile.key}>
             <div className="vital__label">{tile.label}</div>
-            <div className="vital__value">{formatValue(tile.type, tile.value)}</div>
-            <Sparkline values={history.get(tile.key) ?? []} />
+            <div className="vital__value">
+              <VitalValue type={tile.type} value={tile.value} />
+            </div>
+            <Sparkline points={history.get(tile.key) ?? []} type={tile.type} />
           </div>
         ))}
       </div>

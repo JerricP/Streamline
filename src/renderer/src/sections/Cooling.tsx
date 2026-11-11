@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FanChannel, FanChannelConfig, FanCurvePoint, FanMode, FansStatus } from '@shared/types'
 import { FanCurveEditor } from '../components/FanCurveEditor'
+import clsx from 'clsx'
 import { Icon } from '../components/Icon'
+import { Segmented } from '../components/Segmented'
+import { Slider } from '../components/Slider'
 import { api, errorMessage } from '../lib/api'
 import { usePolling } from '../lib/sensors'
 import { useApp } from '../state/AppState'
@@ -153,12 +156,12 @@ export function CoolingSection() {
             {channels.map((entry) => (
               <button
                 key={entry.controlId}
-                className={`fan-card${entry.controlId === channel?.controlId ? ' fan-card--active' : ''}`}
+                className={clsx('fan-card', entry.controlId === channel?.controlId && 'fan-card--active')}
                 onClick={() => setSelected(entry.controlId)}
               >
                 <div className="fan-card__top">
                   <span className="fan-card__name">{entry.name}</span>
-                  <span className={`badge${entry.config.mode !== 'bios' ? ' badge--accent' : ''}`}>
+                  <span className={clsx('badge', entry.config.mode !== 'bios' && 'badge--accent')}>
                     {entry.stalled ? 'stopped' : MODES.find((mode) => mode.mode === entry.config.mode)?.label}
                   </span>
                 </div>
@@ -216,41 +219,33 @@ export function CoolingSection() {
                 </p>
               )}
 
-              <div className="segmented" role="radiogroup" aria-label="Fan mode">
-                {MODES.map((entry) => (
-                  <button
-                    key={entry.mode}
-                    role="radio"
-                    aria-checked={draft.mode === entry.mode}
-                    disabled={!channel.controllable && entry.mode !== 'bios'}
-                    className={`segmented__item${draft.mode === entry.mode ? ' segmented__item--active' : ''}`}
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        mode: entry.mode,
-                        sourceId: draft.sourceId ?? status?.temperatures[0]?.id ?? null
-                      })
-                    }
-                  >
-                    {entry.label}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                label="Fan mode"
+                value={draft.mode}
+                options={MODES.map((entry) => ({
+                  value: entry.mode,
+                  label: entry.label,
+                  disabled: !channel.controllable && entry.mode !== 'bios'
+                }))}
+                onChange={(mode) =>
+                  setDraft({
+                    ...draft,
+                    mode,
+                    sourceId: draft.sourceId ?? status?.temperatures[0]?.id ?? null
+                  })
+                }
+              />
               <p className="muted">{MODES.find((entry) => entry.mode === draft.mode)?.hint}</p>
 
               {draft.mode === 'fixed' && (
                 <div className="field">
-                  <label htmlFor="fixed-duty">
+                  <label id="fixed-duty">
                     Speed <span className="field__value">{draft.fixedDuty}%</span>
                   </label>
-                  <input
-                    id="fixed-duty"
-                    type="range"
-                    min={0}
-                    max={100}
+                  <Slider
+                    labelId="fixed-duty"
                     value={draft.fixedDuty}
-                    className="slider"
-                    onChange={(event) => setDraft({ ...draft, fixedDuty: Number(event.target.value) })}
+                    onChange={(next) => setDraft({ ...draft, fixedDuty: next })}
                   />
                 </div>
               )}
@@ -302,17 +297,13 @@ export function CoolingSection() {
 
               {draft.mode !== 'bios' && (
                 <div className="field">
-                  <label htmlFor="min-duty">
+                  <label id="min-duty">
                     Never slower than <span className="field__value">{draft.minDuty}%</span>
                   </label>
-                  <input
-                    id="min-duty"
-                    type="range"
-                    min={0}
-                    max={100}
+                  <Slider
+                    labelId="min-duty"
                     value={draft.minDuty}
-                    className="slider"
-                    onChange={(event) => setDraft({ ...draft, minDuty: Number(event.target.value) })}
+                    onChange={(next) => setDraft({ ...draft, minDuty: next })}
                   />
                   <span className="field__hint">A floor under the curve or fixed speed. Pumps usually want 100%.</span>
                 </div>

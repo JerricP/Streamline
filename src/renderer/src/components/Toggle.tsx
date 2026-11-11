@@ -1,3 +1,5 @@
+import { Switch } from '@base-ui/react/switch'
+
 export function Toggle({
   checked,
   onChange,
@@ -10,16 +12,14 @@ export function Toggle({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <Switch.Root
+      checked={checked}
+      onCheckedChange={(next) => onChange(next)}
       aria-label={label}
       disabled={disabled}
-      className={`toggle${checked ? ' toggle--on' : ''}`}
-      onClick={() => onChange(!checked)}
+      className="toggle"
     >
-      <span className="toggle__knob" />
-    </button>
+      <Switch.Thumb className="toggle__knob" />
+    </Switch.Root>
   )
 }

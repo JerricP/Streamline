@@ -1,16 +1,15 @@
+import { Toaster } from 'sonner'
 import { useApp } from '../state/AppState'
 
+/** Notifications, rendered by Sonner. `notify()` in AppState is what raises them. */
 export function Toasts() {
-  const { toasts } = useApp()
-  if (toasts.length === 0) return null
-
+  const { settings } = useApp()
   return (
-    <div className="toasts">
-      {toasts.map((toast) => (
-        <div key={toast.id} className={`toast toast--${toast.kind}`} role="status">
-          {toast.text}
-        </div>
-      ))}
-    </div>
+    <Toaster
+      theme={settings?.theme ?? 'dark'}
+      position="bottom-right"
+      duration={5200}
+      toastOptions={{ className: 'toast' }}
+    />
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import clsx from 'clsx'
 import { Icon } from '../components/Icon'
 import type { DriverItem, DriverReport, DriverStatus } from '@shared/types'
 import { api, errorMessage } from '../lib/api'
@@ -19,7 +20,7 @@ function DriverRow({ item, onDownload }: { item: DriverItem; onDownload: (item: 
     <div className="row">
       <div className="row__main">
         <div className="row__title">
-          {item.title} <span className={`badge status--${item.status}`}>{STATUS_LABEL[item.status]}</span>
+          {item.title} <span className={clsx('badge', `status--${item.status}`)}>{STATUS_LABEL[item.status]}</span>
         </div>
         <div className="row__sub">
           {item.category} · latest {item.latestVersion}
@@ -106,7 +107,7 @@ export function DriversSection({ onReport }: { onReport?: (report: DriverReport 
           </div>
         ) : (
           <>
-            <div className={`summary${updates.length > 0 ? ' summary--attention' : ''}`}>
+            <div className={clsx('summary', updates.length > 0 && 'summary--attention')}>
               <span className="summary__icon">
                 <Icon name={updates.length > 0 ? 'drivers' : 'check'} size={18} />
               </span>
@@ -147,8 +148,8 @@ export function DriversSection({ onReport }: { onReport?: (report: DriverReport 
                 <summary>Not found on this PC ({notFound.length})</summary>
                 {notFound.map(row)}
                 <p className="fine-print">
-                  “Not found” means ASUS lists the package for your board but Streamline couldn't match it to anything
-                  installed, often because that hardware or optional software isn't on this PC.
+                  “Not found” means ASUS lists the package for your board, but Streamline couldn't match it to anything
+                  installed. Often that hardware or optional software just isn't on this PC.
                 </p>
               </details>
             )}

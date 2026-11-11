@@ -69,8 +69,11 @@ export function MonitorNotices({ monitor }: { monitor: MonitorStatus | null }) {
           <strong>{monitor.message}</strong>{' '}
           {monitor.driverInstalled === false && (
             <>
-              Install PawnIO from <a onClick={() => void api.shell.openExternal(PAWNIO_URL)}>pawnio.eu</a> (or run{' '}
-              <code>winget install namazso.PawnIO</code>), then turn monitoring off and on again.
+              Install PawnIO from{' '}
+              <button type="button" className="link" onClick={() => void api.shell.openExternal(PAWNIO_URL)}>
+                pawnio.eu
+              </button>{' '}
+              (or run <code>winget install namazso.PawnIO</code>), then turn monitoring off and on again.
             </>
           )}
         </section>
