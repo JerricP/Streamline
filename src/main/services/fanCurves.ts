@@ -32,14 +32,14 @@ export const RAMP_DOWN_PER_TICK = 3
 export const CONTROLLABLE_HARDWARE = ['SuperIO', 'EmbeddedController', 'Cooler']
 
 /**
- * NCT6701D (ROG Strix B850-I) headers Streamline must not drive by duty. With
- * Armoury Crate's AsusFanControlService running, any duty LibreHardwareMonitor
- * set stopped the fans (2026-10-25). FanControl drives the Chassis Fan header
- * (control/0) with the same LHM calls once that service is gone, so only that
- * header is enabled; the rest, including CPU_FAN (the AIO pump on this PC),
- * stay read-only until they are tested one by one.
+ * Controls LibreHardwareMonitor's manual duty doesn't work on. On the ROG
+ * Strix B850-I (NCT6701D) manual mode (0x02 = 0) leaves the chip's dual DC/PWM
+ * engine on (0x1C = 0x82): with Armoury Crate's all-zero DC curve the AIO
+ * fans stopped (2026-10-25), and with the BIOS's own DC curve they hunt
+ * between 850 and 1420 RPM every 15 s at a steady 90% (2026-11-11, nothing
+ * else writing to the chip). See docs/RESEARCH.md.
  */
-const NO_DUTY_CONTROLS = [/^\/lpc\/nct6701d\/\d+\/control\/(?!0$)/]
+const NO_DUTY_CONTROLS = [/^\/lpc\/nct6701d\//]
 
 /** Streamline can drive this fan by setting its duty every second. */
 export function canSetDuty(controlId: string): boolean {
@@ -47,12 +47,14 @@ export function canSetDuty(controlId: string): boolean {
 }
 
 /**
- * Headers driven the way Armoury Crate did it: by writing the chip's own
- * 10-point curve. Not used at the moment: the first live write on the B850-I
- * was followed by the helper exiting, and plain duty (FanControl's way) is
- * simpler. The code stays for chips where duty can't work.
+ * NCT6701D headers driven the way the BIOS and Armoury Crate do it: the
+ * header stays in SmartFan IV and Streamline writes the chip's own 10-point
+ * curve, which the chip then runs by itself. Only headers whose register bank
+ * was verified on the B850-I are listed (the helper keeps the same list); the
+ * rest stay read-only. CPU_FAN (control/1, bank 2) is left out because on
+ * this PC it drives the AIO pump.
  */
-const CHIP_CURVE_CONTROLS: string[] = []
+const CHIP_CURVE_CONTROLS: string[] = ['/lpc/nct6701d/0/control/0']
 
 export function usesChipCurve(controlId: string): boolean {
   return CHIP_CURVE_CONTROLS.includes(controlId)
@@ -72,6 +74,9 @@ export const CHIP_POINTS = 10
 /** The chip's curve temperatures are whole °C; keep them in a sane range. */
 const CHIP_MAX_TEMP = 100
 
+/** A fixed speed holds until this many °C below PANIC_TEMP, then ramps to 100%. */
+const FIXED_PANIC_RAMP = 5
+
 const toChipDuty = (percent: number) => Math.round((clamp(percent, 0, 100) * 255) / 100)
 
 /**
@@ -84,7 +89,11 @@ export function chipCurvePoints(config: FanChannelConfig): ChipPoint[] {
   const floor = config.minDuty ?? 0
   const user =
     config.mode === 'fixed'
-      ? [{ temp: 0, duty: config.fixedDuty }]
+      ? // Two points, so the speed is flat right up to the panic point instead of ramping toward it.
+        [
+          { temp: 0, duty: config.fixedDuty },
+          { temp: PANIC_TEMP - FIXED_PANIC_RAMP, duty: config.fixedDuty }
+        ]
       : [...config.points].sort((a, b) => a.temp - b.temp)
   let points = user.map((point) => ({ temp: Math.round(clamp(point.temp, 0, CHIP_MAX_TEMP)), duty: Math.max(floor, point.duty) }))
   if (points[0].temp > 0) points.unshift({ temp: 0, duty: points[0].duty })

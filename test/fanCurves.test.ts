@@ -71,13 +71,13 @@ test('a fan that spins under the BIOS and stops under Streamline is a stall', ()
   assert.equal(checkStall({ seenSpinning: true, zeroTicks: 99 }, 0, 10).stalled, false)
 })
 
-test('on the NCT6701D only the chassis header is driven, by duty', () => {
-  assert.equal(canSetDuty('/lpc/nct6701d/0/control/0'), true)
-  assert.equal(usesChipCurve('/lpc/nct6701d/0/control/0'), false)
+test('NCT6701D headers are driven by chip curve, never by duty, and only the verified ones', () => {
+  assert.equal(canSetDuty('/lpc/nct6701d/0/control/0'), false)
+  assert.equal(usesChipCurve('/lpc/nct6701d/0/control/0'), true)
   assert.equal(canControl('/lpc/nct6701d/0/control/0'), true)
   assert.equal(canControl('/lpc/nct6701d/0/control/1'), false)
-  assert.equal(canControl('/lpc/nct6701d/0/control/5'), false)
   assert.equal(canSetDuty('/lpc/nct6799d/0/control/0'), true)
+  assert.equal(usesChipCurve('/lpc/nct6799d/0/control/0'), false)
 })
 
 test('chip curves have 10 rising points, a 0 °C start and a 100% panic point', () => {
@@ -102,10 +102,14 @@ test('chip curves keep the panic point when every slot is used, and honour the f
   assert.deepEqual(points[9], { temp: PANIC_TEMP, duty: 255 })
   assert.ok(points.slice(0, 9).every((point) => point.duty === 77))
   const fixed = chipCurvePoints({ ...curve, mode: 'fixed', fixedDuty: 60 })
-  assert.deepEqual(fixed.slice(0, 2), [
+  assert.deepEqual(fixed.slice(0, 3), [
     { temp: 0, duty: 153 },
+    { temp: PANIC_TEMP - 5, duty: 153 },
     { temp: PANIC_TEMP, duty: 255 }
   ])
+  // Flat across the whole working range, not a ramp toward the panic point.
+  assert.equal(Math.round(chipCurveDuty(fixed, 60)), 60)
+  assert.equal(Math.round(chipCurveDuty(fixed, 88)), 60)
 })
 
 test('sanitize sorts, rounds and clamps points', () => {

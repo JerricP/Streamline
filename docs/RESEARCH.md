@@ -147,6 +147,20 @@ while FanControl holds the Chassis Fan at a fixed speed, and check whether
 `AsusFanControlService` still exists. Streamline now fetches LHM
 0.9.7-pre782 to match FanControl's build.
 
+**Retest without Armoury Crate (2026-11-11).** With Armoury Crate fully
+uninstalled (no `AsusFanControlService`, no AsIO3), LHM manual duty on the
+Chassis Fan header no longer stops the fans but makes them hunt: at a fixed
+90% the RPM climbs from ~850 to ~1420 over 10 s, collapses in 2-3 s, and
+repeats every ~15 s. A read-only 1 s capture showed nothing rewriting the
+chip (0x02 = 00, 0x09 = E5, 0x1C = 82 throughout). In manual mode 0x0B stays
+at its last SmartFan value (AF) instead of following 0x09, and the BIOS's DC
+curve (0x21-0x24 = 14 1E 28 32, 0x27-0x2A = 33 42 56 72) is non-zero where
+Armoury Crate's was all zero. So the earlier 0 RPM and this hunting are the
+same fault: in manual mode the dual DC/PWM engine keeps driving the header
+from the DC side. On BIOS (0x02 = 40) the same header is smooth. Manual duty
+is therefore off for this chip whatever else is installed, and the header is
+driven by chip curve again. A fixed speed is written as a flat curve.
+
 So Streamline now drives NCT6701D headers the same way ("chip curves"): the
 helper writes the 10 points through LHM's own `Nct677X.ReadByte/WriteByte`
 (reflection) under the ISA bus and `Global\ASUS_SIO_MUTEX` locks, refusing

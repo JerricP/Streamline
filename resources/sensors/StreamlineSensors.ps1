@@ -27,6 +27,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# A short diagnostic log, because the app only sees "pipe closed" when this helper dies.
+$logFile = Join-Path $env:TEMP 'streamline-sensor-helper.log'
+function Write-HelperLog([string]$text) {
+  try {
+    if ((Test-Path $logFile) -and (Get-Item $logFile).Length -gt 262144) { Remove-Item $logFile -Force }
+    Add-Content -Path $logFile -Value ("{0} [{1}] {2}" -f (Get-Date).ToUniversalTime().ToString('o'), $PID, $text) -Encoding UTF8
+  } catch { }
+}
+Write-HelperLog 'helper starting'
+trap { Write-HelperLog ("unhandled: " + ($_ | Out-String)); break }
+
 # The NuGet builds reference slightly different versions of System.Memory and
 # friends. Resolve any of them by simple name from our folder, as a binding
 # redirect would. Compiled C# so the handler works on any thread.
@@ -196,7 +207,7 @@ try {
 
   while ($true) {
     $line = $reader.ReadLine()
-    if ($null -eq $line) { break }
+    if ($null -eq $line) { Write-HelperLog 'pipe closed by the app'; break }
     $request = $null
     try {
       $request = $line | ConvertFrom-Json
@@ -255,6 +266,7 @@ try {
             }
             Read-ChipCurve $nct
           }
+          Write-HelperLog ("chip curve written to " + [string]$request.control)
           Send @{ id = $request.id; ok = $true; curve = $curve }
         }
         default { throw "Unknown command $($request.cmd)" }
@@ -265,6 +277,7 @@ try {
     }
   }
 } catch {
+  Write-HelperLog ("fatal: " + ($_ | Out-String))
   try { Send @{ type = 'fatal'; error = $_.Exception.Message } } catch { }
 } finally {
   foreach ($control in $touched.Values) {
@@ -272,4 +285,5 @@ try {
   }
   if ($computer) { try { $computer.Close() } catch { } }
   $stream.Dispose()
+  Write-HelperLog 'helper exiting'
 }
