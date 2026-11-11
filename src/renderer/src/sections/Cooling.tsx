@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FanChannel, FanChannelConfig, FanCurvePoint, FanMode, FansStatus } from '@shared/types'
 import { FanCurveEditor } from '../components/FanCurveEditor'
-import { MonitorNotices, MonitorOff } from '../components/Monitor'
+import { Icon } from '../components/Icon'
 import { api, errorMessage } from '../lib/api'
 import { usePolling } from '../lib/sensors'
 import { useApp } from '../state/AppState'
@@ -61,7 +61,7 @@ const PUMP_RPM = 2500
 
 const sameConfig = (a: FanChannelConfig, b: FanChannelConfig) => JSON.stringify(a) === JSON.stringify(b)
 
-export function FansPage() {
+export function CoolingSection() {
   const { notify } = useApp()
   const [status, setStatus] = useState<FansStatus | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -102,17 +102,27 @@ export function FansPage() {
   }
 
   const monitor = status?.monitor ?? null
+  const head = (
+    <header className="card__head">
+      <span className="card__title">
+        <Icon name="fan" />
+        Cooling
+      </span>
+      {monitor?.state === 'running' && channels.length > 0 && (
+        <span className="card__meta">Changes apply within a second of saving</span>
+      )}
+    </header>
+  )
+
+  // Monitoring is switched on from the top of the workspace; the curves need it.
   if (monitor?.state !== 'running') {
     return (
-      <>
-        <div className="page-header">
-          <div>
-            <h1>Fans</h1>
-            <p>Fan curves for the motherboard's fan headers.</p>
-          </div>
+      <section className="card" id="fans">
+        {head}
+        <div className="card__body">
+          <p className="muted">Turn on hardware monitoring above to see and set the motherboard's fan headers.</p>
         </div>
-        {status && <MonitorOff monitor={monitor} onStarted={() => void refresh()} />}
-      </>
+      </section>
     )
   }
 
@@ -128,20 +138,14 @@ export function FansPage() {
   const source = status?.temperatures.find((entry) => entry.id === draft?.sourceId)
 
   return (
-    <>
-      <div className="page-header">
-        <div>
-          <h1>Fans</h1>
-          <p>Fan curves for the motherboard's fan headers. Changes apply within a second of saving.</p>
-        </div>
-      </div>
-
-      <MonitorNotices monitor={monitor} />
-
+    <section className="card" id="fans">
+      {head}
       {channels.length === 0 ? (
-        <div className="empty">
-          <h2>No controllable fans found</h2>
-          <p>The motherboard's sensor chip didn't report any fan headers. Check the notice above.</p>
+        <div className="card__body">
+          <div className="empty">
+            <h2>No controllable fans found</h2>
+            <p>The motherboard's sensor chip didn't report any fan headers. Check the notice above.</p>
+          </div>
         </div>
       ) : (
         <div className="fans">
@@ -170,7 +174,7 @@ export function FansPage() {
           </div>
 
           {channel && draft && (
-            <section className="panel fans__editor">
+            <div className="fans__editor">
               <div className="fans__editor-head">
                 <input
                   className="input fans__name"
@@ -189,35 +193,37 @@ export function FansPage() {
                 </div>
               </div>
 
-              <p className="panel__text">
+              <p className="muted">
                 On the board as “{channel.chipName}”. Rename it to what's plugged in, e.g. “AIO fans”.
               </p>
 
               {!channel.controllable && (
-                <p className="panel__text panel__text--error">
+                <p className="note note--warn">
                   Streamline can read this fan but can't set its speed safely on this board yet, so it stays on the BIOS
                   curve. You can still rename it.
                 </p>
               )}
               {channel.chipCurve && (
-                <p className="panel__text">
+                <p className="note">
                   Saved curves are written into the fan chip, the way Armoury Crate does it, and keep running even when
                   Streamline is closed. BIOS puts back the curve that was there before.
                 </p>
               )}
               {channel.stalled && (
-                <p className="panel__text panel__text--error">
+                <p className="note note--warn">
                   This fan stopped spinning when Streamline set its speed, so it was handed back to the BIOS. Save again
                   to retry.
                 </p>
               )}
 
-              <div className="chip-row">
+              <div className="segmented" role="radiogroup" aria-label="Fan mode">
                 {MODES.map((entry) => (
                   <button
                     key={entry.mode}
+                    role="radio"
+                    aria-checked={draft.mode === entry.mode}
                     disabled={!channel.controllable && entry.mode !== 'bios'}
-                    className={`chip${draft.mode === entry.mode ? ' chip--active' : ''}`}
+                    className={`segmented__item${draft.mode === entry.mode ? ' segmented__item--active' : ''}`}
                     onClick={() =>
                       setDraft({
                         ...draft,
@@ -230,11 +236,13 @@ export function FansPage() {
                   </button>
                 ))}
               </div>
-              <p className="panel__text">{MODES.find((entry) => entry.mode === draft.mode)?.hint}</p>
+              <p className="muted">{MODES.find((entry) => entry.mode === draft.mode)?.hint}</p>
 
               {draft.mode === 'fixed' && (
                 <div className="field">
-                  <label htmlFor="fixed-duty">Speed: {draft.fixedDuty}%</label>
+                  <label htmlFor="fixed-duty">
+                    Speed <span className="field__value">{draft.fixedDuty}%</span>
+                  </label>
                   <input
                     id="fixed-duty"
                     type="range"
@@ -249,7 +257,7 @@ export function FansPage() {
 
               {draft.mode === 'curve' && (
                 <>
-                  <div className="toolbar" style={{ marginBottom: 12 }}>
+                  <div className="toolbar" style={{ marginBottom: 14 }}>
                     {channel.chipCurve ? (
                       <span className="field__inline">Follows the fan chip's own CPU temperature</span>
                     ) : (
@@ -294,7 +302,9 @@ export function FansPage() {
 
               {draft.mode !== 'bios' && (
                 <div className="field">
-                  <label htmlFor="min-duty">Never slower than: {draft.minDuty}%</label>
+                  <label htmlFor="min-duty">
+                    Never slower than <span className="field__value">{draft.minDuty}%</span>
+                  </label>
                   <input
                     id="min-duty"
                     type="range"
@@ -309,19 +319,19 @@ export function FansPage() {
               )}
 
               {looksLikePump && (
-                <p className="panel__text panel__text--error">
+                <p className="note note--warn">
                   This header spins at over {PUMP_RPM} RPM, which is typical of an AIO pump. A slow or stopped pump
                   overheats the CPU quickly; leave it on BIOS or set “Never slower than” high.
                 </p>
               )}
 
               {cpuFanTooLow && (
-                <p className="panel__text panel__text--error">
+                <p className="note note--warn">
                   CPU fans below {CPU_FAN_FLOOR}% can stall, and the BIOS may report a CPU fan error at boot.
                 </p>
               )}
 
-              <div className="toolbar" style={{ marginTop: 14 }}>
+              <div className="actions">
                 <button className="button button--primary" onClick={() => void save()} disabled={!dirty || saving}>
                   {saving ? 'Saving…' : 'Save'}
                 </button>
@@ -333,10 +343,10 @@ export function FansPage() {
                   Revert
                 </button>
               </div>
-            </section>
+            </div>
           )}
         </div>
       )}
-    </>
+    </section>
   )
 }
