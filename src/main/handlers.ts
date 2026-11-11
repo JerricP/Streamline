@@ -3,16 +3,21 @@ import { CHANNELS } from '@shared/channels'
 import type {
   AppInfo,
   DriverReport,
+  FanChannelConfig,
+  FansStatus,
   LightingMode,
   LightingState,
   LightingStatus,
+  SensorsStatus,
   Settings,
   ThemePreference
 } from '@shared/types'
 import type { AuraService } from './services/aura'
 import { isVendorLightingServiceRunning, parseHexColor } from './services/aura'
 import { checkDrivers } from './services/drivers'
+import { canControl, fanChannels, fanIdForControl, sanitizeFanConfig, temperatureSources } from './services/fanCurves'
 import type { Logger } from './services/logger'
+import type { SensorService } from './services/sensors'
 import type { Paths } from './services/paths'
 import type { Store } from './store'
 
@@ -21,6 +26,7 @@ export interface HandlerContext {
   store: Store
   logger: Logger
   aura: AuraService
+  sensors: SensorService
   /** Called after settings change so the tray and login item can follow. */
   onSettingsChanged: (settings: Settings) => void
   /** Called after lighting is applied so the tray menu can tick the mode. */
@@ -120,6 +126,74 @@ export function createHandlers(context: HandlerContext): Map<string, Handler> {
       db.lastDriverReport = report
       return report
     })
+  })
+
+  // ---- Sensors and fans ---------------------------------------------------
+  const { sensors } = context
+  /** The overview shows fans by the names given on the Fans page. */
+  const sensorsStatus = (): SensorsStatus => {
+    const snapshot = sensors.snapshot
+    const names = new Map<string, string>()
+    for (const [controlId, config] of Object.entries(store.snapshot.fans)) {
+      if (!config.name) continue
+      names.set(controlId, config.name)
+      names.set(fanIdForControl(controlId), config.name)
+    }
+    if (!snapshot || names.size === 0) return { monitor: sensors.status, snapshot }
+    return {
+      monitor: sensors.status,
+      snapshot: {
+        ...snapshot,
+        hardware: snapshot.hardware.map((hardware) => ({
+          ...hardware,
+          sensors: hardware.sensors.map((sensor) => ({ ...sensor, name: names.get(sensor.id) ?? sensor.name }))
+        }))
+      }
+    }
+  }
+
+  handle<SensorsStatus>(CHANNELS.sensorsStatus, sensorsStatus)
+
+  handle<SensorsStatus>(CHANNELS.sensorsStart, async () => {
+    await sensors.start()
+    store.mutate((db) => {
+      db.monitoringEnabled = true
+    })
+    return sensorsStatus()
+  })
+
+  handle<SensorsStatus>(CHANNELS.sensorsStop, () => {
+    // Stopping closes the helper, which hands every fan back to the BIOS.
+    sensors.stop()
+    store.mutate((db) => {
+      db.monitoringEnabled = false
+    })
+    return sensorsStatus()
+  })
+
+  const fansStatus = (): FansStatus => ({
+    monitor: sensors.status,
+    channels: fanChannels(sensors.snapshot, store.snapshot.fans, sensors.targets, sensors.stalled),
+    temperatures: temperatureSources(sensors.snapshot)
+  })
+
+  handle<FansStatus>(CHANNELS.fansStatus, fansStatus)
+
+  handle<FansStatus>(CHANNELS.fansSave, async (controlId: string, input: Partial<FanChannelConfig>) => {
+    if (!fanChannels(sensors.snapshot, {}, sensors.targets).some((channel) => channel.controlId === controlId)) {
+      throw new Error('That fan is not available right now.')
+    }
+    const config = sanitizeFanConfig(input)
+    if (config.mode !== 'bios' && !canControl(controlId)) {
+      throw new Error("Streamline can't drive this fan chip safely yet, so it stays on the BIOS. You can still rename it.")
+    }
+    // Chip-curve headers are written now, so a failure is reported and not saved.
+    await sensors.applyFanConfig(controlId, config)
+    store.mutate((db) => {
+      db.fans = { ...db.fans, [controlId]: config }
+    })
+    logger.info('fans', `${controlId}: ${config.mode}`)
+    return fansStatus()
   })
 
   // ---- Shell --------------------------------------------------------------

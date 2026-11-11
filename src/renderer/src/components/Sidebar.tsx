@@ -7,6 +7,8 @@ interface NavEntry {
 }
 
 const ENTRIES: NavEntry[] = [
+  { key: 'overview', label: 'Overview', glyph: '◉' },
+  { key: 'fans', label: 'Fans', glyph: '✣' },
   { key: 'lighting', label: 'Lighting', glyph: '✦' },
   { key: 'drivers', label: 'Drivers', glyph: '↻' },
   { key: 'settings', label: 'Settings', glyph: '⚙' }

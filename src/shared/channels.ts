@@ -15,7 +15,14 @@ export const CHANNELS = {
   driversLast: 'drivers:last',
   driversCheck: 'drivers:check',
 
-  shellOpenExternal: 'shell:openExternal'
+  shellOpenExternal: 'shell:openExternal',
+
+  sensorsStatus: 'sensors:status',
+  sensorsStart: 'sensors:start',
+  sensorsStop: 'sensors:stop',
+
+  fansStatus: 'fans:status',
+  fansSave: 'fans:save'
 } as const
 
 export type ChannelName = (typeof CHANNELS)[keyof typeof CHANNELS]

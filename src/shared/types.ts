@@ -82,3 +82,120 @@ export interface DriverReport {
   /** Why the BIOS list is missing, when it is; drivers are still listed. */
   biosError: string | null
 }
+
+// ---- Sensors and fans -----------------------------------------------------
+
+/** LibreHardwareMonitor's sensor kinds, e.g. "Temperature", "Fan", "Control". */
+export type SensorType = string
+
+export interface SensorReading {
+  /** Stable LibreHardwareMonitor identifier, e.g. "/lpc/nct6701d/0/fan/1". */
+  id: string
+  name: string
+  type: SensorType
+  value: number | null
+  min: number | null
+  max: number | null
+  /** Controls only: Streamline (not the BIOS) currently sets this fan. */
+  software: boolean
+}
+
+export interface HardwareReading {
+  id: string
+  /** Sub-hardware is flattened; its name is prefixed with the parent's. */
+  name: string
+  /** LibreHardwareMonitor's hardware kind, e.g. "Cpu", "SuperIO", "GpuNvidia". */
+  type: string
+  sensors: SensorReading[]
+}
+
+export interface SensorSnapshot {
+  at: number
+  hardware: HardwareReading[]
+}
+
+export type MonitorState = 'off' | 'starting' | 'running' | 'error'
+
+export interface MonitorStatus {
+  state: MonitorState
+  /** Why monitoring stopped or isn't fully working, in plain words. */
+  message: string | null
+  /** The PawnIO driver LibreHardwareMonitor needs for the Super I/O chip. Null until known. */
+  driverInstalled: boolean | null
+  /** Readings come from the built-in simulator, not real hardware (development only). */
+  simulated: boolean
+  /** Armoury Crate's fan service is running and will fight over the fans. */
+  vendorFanServiceRunning: boolean
+}
+
+export interface FanCurvePoint {
+  /** °C */
+  temp: number
+  /** Percent, 0-100. */
+  duty: number
+}
+
+/** `bios`: the board's own Q-Fan control. `fixed`: one speed. `curve`: follow a temperature. */
+export type FanMode = 'bios' | 'fixed' | 'curve'
+
+export interface FanChannelConfig {
+  /** Your name for the header, e.g. "AIO fans"; null keeps the chip's name. */
+  name: string | null
+  mode: FanMode
+  /** Streamline never runs this fan slower than this, percent. */
+  minDuty: number
+  fixedDuty: number
+  /** Temperature sensor the curve follows. */
+  sourceId: string | null
+  points: FanCurvePoint[]
+}
+
+export interface FanChannel {
+  /** The control sensor's id; fan settings are keyed by it. */
+  controlId: string
+  /** The matching RPM sensor, when the chip reports one. */
+  fanId: string | null
+  /** Your name if you set one, else the chip's. */
+  name: string
+  /** The chip's own name for the header, e.g. "Chassis Fan". */
+  chipName: string
+  rpm: number | null
+  /** Duty the chip reports now, percent. */
+  duty: number | null
+  /** Duty Streamline last asked for, or null while the BIOS is in charge. */
+  target: number | null
+  /** The curve's temperature right now. */
+  sourceTemp: number | null
+  /**
+   * The fan stopped spinning under Streamline, so it was handed back to the
+   * BIOS. Saving its settings again retries.
+   */
+  stalled: boolean
+  /** False for chips Streamline can read but not yet drive safely; they stay on the BIOS. */
+  controllable: boolean
+  /**
+   * Driven by writing the fan chip's own curve (as Armoury Crate does) rather
+   * than a duty every second. The chip follows its own CPU temperature input,
+   * and keeps running the curve when Streamline isn't.
+   */
+  chipCurve: boolean
+  config: FanChannelConfig
+}
+
+export interface TemperatureSource {
+  id: string
+  name: string
+  hardware: string
+  value: number | null
+}
+
+export interface FansStatus {
+  monitor: MonitorStatus
+  channels: FanChannel[]
+  temperatures: TemperatureSource[]
+}
+
+export interface SensorsStatus {
+  monitor: MonitorStatus
+  snapshot: SensorSnapshot | null
+}

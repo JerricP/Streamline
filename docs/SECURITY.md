@@ -17,3 +17,19 @@ web page you visit can't use it:
   `https:` URLs; nothing downloads or runs installers.
 
 Restarting Streamline invalidates the token; open the page again from the tray.
+
+## Sensor helper
+
+Fan control needs administrator rights, so only the small sensor helper runs
+elevated, never the tray app or its web server.
+
+- It is started only after you turn monitoring on, through a normal UAC prompt.
+- It connects out to a named pipe with a random name created by the tray app,
+  and must present a random per-launch token before the app talks to it.
+- It accepts three commands: read sensors, set a known fan control to 0-100%,
+  and hand a fan back to the BIOS. There is no command that runs code or
+  touches files.
+- The web UI never talks to it; fan settings are validated in the main process
+  (`sanitizeFanConfig`) before the fan engine uses them.
+- LibreHardwareMonitorLib and its dependencies are downloaded from nuget.org
+  at pinned versions; `resources/lhm/SHA256SUMS` records what was bundled.

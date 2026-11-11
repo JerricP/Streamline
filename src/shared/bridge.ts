@@ -1,4 +1,13 @@
-import type { AppInfo, DriverReport, LightingState, LightingStatus, Settings } from './types'
+import type {
+  AppInfo,
+  DriverReport,
+  FanChannelConfig,
+  FansStatus,
+  LightingState,
+  LightingStatus,
+  SensorsStatus,
+  Settings
+} from './types'
 import { CHANNELS } from './channels'
 
 /**
@@ -23,6 +32,16 @@ export interface StreamlineApi {
   }
   shell: {
     openExternal(url: string): Promise<{ opened: boolean }>
+  }
+  sensors: {
+    status(): Promise<SensorsStatus>
+    /** Turn hardware monitoring on; Windows asks for administrator rights. */
+    start(): Promise<SensorsStatus>
+    stop(): Promise<SensorsStatus>
+  }
+  fans: {
+    status(): Promise<FansStatus>
+    save(controlId: string, config: FanChannelConfig): Promise<FansStatus>
   }
 }
 
@@ -62,6 +81,15 @@ export function createApi(invoke: Invoke): StreamlineApi {
     },
     shell: {
       openExternal: (url) => invoke<{ opened: boolean }>(CHANNELS.shellOpenExternal, url)
+    },
+    sensors: {
+      status: () => invoke<SensorsStatus>(CHANNELS.sensorsStatus),
+      start: () => invoke<SensorsStatus>(CHANNELS.sensorsStart),
+      stop: () => invoke<SensorsStatus>(CHANNELS.sensorsStop)
+    },
+    fans: {
+      status: () => invoke<FansStatus>(CHANNELS.fansStatus),
+      save: (controlId, config) => invoke<FansStatus>(CHANNELS.fansSave, controlId, config)
     }
   }
 }
