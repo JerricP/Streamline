@@ -72,6 +72,6 @@ export class AppTray {
   }
 
   destroy(): void {
-    this.tray.destroy()
+    if (!this.tray.isDestroyed()) this.tray.destroy()
   }
 }

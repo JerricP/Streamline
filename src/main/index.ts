@@ -16,6 +16,9 @@ const BACKGROUND_FLAG = '--background'
 
 const DEFAULT_COLOR = '#ffffff'
 
+/** How long a quit may take before the process is ended regardless. */
+const QUIT_GRACE_MS = 3000
+
 // One instance owns the controller, the database and the web server.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -46,7 +49,7 @@ if (!app.requestSingleInstanceLock()) {
   // There is no window; the tray keeps the app alive until Quit.
   app.on('window-all-closed', () => undefined)
 
-  app.whenReady().then(async () => {
+  const start = async (): Promise<void> => {
     const paths = new Paths(join(app.getPath('userData'), 'StreamlineData'))
     const logger = new Logger(paths.logs)
     const activeStore = new Store(paths)
@@ -121,13 +124,32 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     if (!process.argv.includes(BACKGROUND_FLAG)) openPage()
-  })
+  }
 
+  app.whenReady().then(() =>
+    start().catch((error) => {
+      // Without its tray icon Streamline can only be ended from Task Manager, so never linger half-started.
+      console.error('Streamline could not start:', error)
+      tray?.destroy()
+      app.exit(1)
+    })
+  )
+
+  let quitting = false
   app.on('before-quit', () => {
+    if (quitting) return
+    quitting = true
     // Closing the helper hands every fan back to the BIOS.
     sensors?.stop()
     store?.flushNow()
-    tray?.destroy()
     void server?.close()
+    // The icon goes last, and nothing (an open browser tab's connection, the
+    // helper) may keep the process alive once it is gone.
+    setTimeout(() => {
+      tray?.destroy()
+      app.exit(0)
+    }, QUIT_GRACE_MS).unref()
   })
+
+  app.on('will-quit', () => tray?.destroy())
 }
