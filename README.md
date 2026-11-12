@@ -30,7 +30,7 @@ Target hardware: ASUS ROG Strix B850-I (Aura USB controller), Windows 10/11.
   [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor),
   loaded by a small PowerShell helper that runs as administrator. It needs the
   signed [PawnIO](https://pawnio.eu/) driver (`winget install namazso.PawnIO`).
-  Monitoring is off until you turn it on from the Overview page; Windows then
+  Monitoring is off until you turn it on at the top of the settings page; Windows then
   asks for administrator rights. Each fan header can stay on the BIOS curve,
   run at a fixed speed, or follow a curve you drag into shape against any
   temperature. If Streamline quits or crashes, the helper hands every fan back
@@ -56,7 +56,7 @@ while it runs. Fans left on "BIOS" keep following the board's Q-Fan settings.
 - Windows 10/11 on an ASUS board with an Aura USB controller
 - Node.js 22+ and npm to build
 
-Set `STREAMLINE_SIMULATE_SENSORS=1` to develop the Overview and Fans pages
+Set `STREAMLINE_SIMULATE_SENSORS=1` to develop the sensor and cooling parts of the settings page
 with made-up readings on a machine without the hardware.
 
 If `npm start` says Electron failed to install, run

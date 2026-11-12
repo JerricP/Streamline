@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import type { FanCurvePoint } from '@shared/types'
@@ -68,7 +69,9 @@ export function FanCurveEditor({
   const movePoint = (index: number, temp: number, duty: number) => {
     const low = index > 0 ? points[index - 1].temp + 1 : TEMP_MIN
     const high = index < points.length - 1 ? points[index + 1].temp - 1 : TEMP_MAX
-    const next = points.map((point, i) => (i === index ? { temp: clamp(temp, low, high), duty: clamp(duty, 0, 100) } : point))
+    const next = points.map((point, i) =>
+      i === index ? { temp: clamp(temp, low, high), duty: clamp(duty, 0, 100) } : point
+    )
     onChange(next)
   }
 
@@ -129,7 +132,7 @@ export function FanCurveEditor({
       <svg
         ref={svgRef}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className={`curve__svg${dragging !== null ? ' curve__svg--dragging' : ''}`}
+        className={clsx('curve__svg', dragging !== null && 'curve__svg--dragging')}
         onPointerMove={onPointerMove}
         onPointerUp={() => setDragging(null)}
         onPointerCancel={() => setDragging(null)}
@@ -177,7 +180,7 @@ export function FanCurveEditor({
         {points.map((point, index) => (
           <circle
             key={index}
-            className={`curve__point${active === index ? ' curve__point--active' : ''}`}
+            className={clsx('curve__point', active === index && 'curve__point--active')}
             cx={xFor(point.temp)}
             cy={yFor(point.duty)}
             r={8}
@@ -197,7 +200,10 @@ export function FanCurveEditor({
         ))}
 
         {active !== null && points[active] && (
-          <g className="curve__tip" transform={`translate(${clamp(xFor(points[active].temp), PAD.left + 40, WIDTH - PAD.right - 40)}, ${Math.max(yFor(points[active].duty) - 18, PAD.top + 10)})`}>
+          <g
+            className="curve__tip"
+            transform={`translate(${clamp(xFor(points[active].temp), PAD.left + 40, WIDTH - PAD.right - 40)}, ${Math.max(yFor(points[active].duty) - 18, PAD.top + 10)})`}
+          >
             <rect x={-40} y={-14} width={80} height={22} rx={6} />
             <text y={2} textAnchor="middle">
               {points[active].temp}°C · {points[active].duty}%

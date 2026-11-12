@@ -1,20 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import type { AppInfo, Settings } from '@shared/types'
 import { api, errorMessage } from '../lib/api'
 
-export interface Toast {
-  id: number
-  kind: 'info' | 'success' | 'error'
-  text: string
-}
+export type ToastKind = 'info' | 'success' | 'error'
 
 interface AppStateValue {
   ready: boolean
   appInfo: AppInfo | null
   settings: Settings | null
-  toasts: Toast[]
-  notify: (text: string, kind?: Toast['kind']) => void
+  notify: (text: string, kind?: ToastKind) => void
   updateSettings: (patch: Partial<Settings>) => Promise<void>
 }
 
@@ -24,15 +20,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const nextToastId = useRef(0)
 
-  const notify = useCallback((text: string, kind: Toast['kind'] = 'info') => {
-    const id = (nextToastId.current += 1)
-    setToasts((previous) => [...previous, { id, kind, text }])
-    window.setTimeout(() => {
-      setToasts((previous) => previous.filter((toast) => toast.id !== id))
-    }, 5200)
+  const notify = useCallback((text: string, kind: ToastKind = 'info') => {
+    if (kind === 'success') toast.success(text)
+    else if (kind === 'error') toast.error(text)
+    else toast(text)
   }, [])
 
   const updateSettings = useCallback(async (patch: Partial<Settings>) => {
@@ -64,8 +56,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [settings?.theme, settings?.accent])
 
   const value = useMemo<AppStateValue>(
-    () => ({ ready, appInfo, settings, toasts, notify, updateSettings }),
-    [ready, appInfo, settings, toasts, notify, updateSettings]
+    () => ({ ready, appInfo, settings, notify, updateSettings }),
+    [ready, appInfo, settings, notify, updateSettings]
   )
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
